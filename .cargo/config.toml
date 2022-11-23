@@ -1,0 +1,3 @@
+#token for pushing on BITFALTER
+[registries]
+kellnr = { index = "git://advancedprogramming.disi.unitn.it/index", token = "49edfe5aeadb864df6b42d328a2ed355" }
