@@ -62,10 +62,10 @@ impl Market{
         self.goods[0].clone()
     }
     //TODO
-    pub fn get_buy_price(&self,kind :GoodKind, quantity: i32)-> Result<f32,MarketError> {
+    pub fn get_buy_price(&self,kind :GoodKind, quantity: f32)-> Result<f32,MarketError> {
         Err(MarketError::NotImplemented)
     }
-    pub fn get_sell_price(&self,kind :GoodKind, quantity: i32)-> Result<f32,MarketError> {
+    pub fn get_sell_price(&self,kind :GoodKind, quantity: f32)-> Result<f32,MarketError> {
         Err(MarketError::NotImplemented)
     }
 
