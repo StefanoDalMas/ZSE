@@ -13,12 +13,19 @@ use unitn_market_2022::good::consts::{DEFAULT_EUR_YUAN_EXCHANGE_RATE, DEFAULT_EU
 use unitn_market_2022::market::good_label::GoodLabel;
 use crate::wrapper::Wrapper;
 
-pub struct ZSE{
+
+
+pub struct ZSE {
     pub name: String,
     pub goods: [Good; 4],
+    pub prices_sell: [f32; 4],
+    pub prices_buy: [f32; 4],
+    pub lock_buy: [String; 4],
+    pub lock_sell: [String; 4],
+    pub countlock: i32,
 }
-
-
+//Shitty stuff
+const MAXLOCK :i32 = 2;
 
 
 impl Notifiable for ZSE {
@@ -52,6 +59,31 @@ impl Market for ZSE{
                 Good::new(Gk::YEN, tmp[2]*DEFAULT_EUR_YEN_EXCHANGE_RATE),
                 Good::new(Gk::YUAN, tmp[3]*DEFAULT_EUR_YUAN_EXCHANGE_RATE),
             ],
+            prices_sell: [
+                1.0,
+                DEFAULT_EUR_USD_EXCHANGE_RATE,
+                DEFAULT_EUR_YEN_EXCHANGE_RATE,
+                DEFAULT_EUR_YUAN_EXCHANGE_RATE,
+            ],
+            prices_buy: [
+                1.0,
+                DEFAULT_EUR_USD_EXCHANGE_RATE,
+                DEFAULT_EUR_YEN_EXCHANGE_RATE,
+                DEFAULT_EUR_YUAN_EXCHANGE_RATE,
+            ],
+            lock_buy: [
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+            ],
+            lock_sell: [
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+            ],
+            countlock:0,
         };
         Rc::new(RefCell::new(market))
     }
@@ -65,6 +97,31 @@ impl Market for ZSE{
                 Good::new(Gk::YEN, yen),
                 Good::new(Gk::YUAN, yuan),
             ],
+            prices_sell: [
+                1.0,
+                DEFAULT_EUR_USD_EXCHANGE_RATE,
+                DEFAULT_EUR_YEN_EXCHANGE_RATE,
+                DEFAULT_EUR_YUAN_EXCHANGE_RATE,
+            ],
+            prices_buy: [
+                1.0,
+                DEFAULT_EUR_USD_EXCHANGE_RATE,
+                DEFAULT_EUR_YEN_EXCHANGE_RATE,
+                DEFAULT_EUR_YUAN_EXCHANGE_RATE,
+            ],
+            lock_buy: [
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+            ],
+            lock_sell: [
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+            ],
+            countlock:0,
         };
         Rc::new(RefCell::new(market))
     }
@@ -107,14 +164,36 @@ impl Market for ZSE{
     }
 
     fn get_buy_price(&self, kind: GoodKind, quantity: f32) -> Result<f32, MarketGetterError> {
-        todo!()
+        if quantity<0.0{
+            return Err(MarketGetterError::NonPositiveQuantityAsked);
+        }
+        let internal_quantity = self.get_quantity_by_goodkind(&kind);
+        if internal_quantity < quantity{
+            return Err(MarketGetterError::InsufficientGoodQuantityAvailable { requested_good_kind: kind, requested_good_quantity: quantity, available_good_quantity: internal_quantity});
+        }
+        let discount = quantity/self.get_quantity_by_goodkind(&kind) * 10.0; //10% off is max discount
+        let price = self.get_price_buy_by_goodkind(&kind);
+        Self::fluctuate(self);
+        Ok(price - price*discount/100.0)
     }
 
     fn get_sell_price(&self, kind: GoodKind, quantity: f32) -> Result<f32, MarketGetterError> {
-        todo!()
+        if quantity< 0.0{
+            return Err(MarketGetterError::NonPositiveQuantityAsked);
+        }
+        let x = self.get_price_sell_by_goodkind(&kind);
+        Self::fluctuate(self);
+        return Ok((x+x*0.02)*quantity);
     }
 
     fn get_goods(&self) -> Vec<GoodLabel> {
+        /*let mut goods = Vec::new();
+        for good in self.goods.iter(){
+            goods.push(GoodLabel::new(good.get_kind(), good.get_qty()));
+        }
+        goods
+        manca la new di goodlabel cazzoni
+         */
         todo!()
     }
 
@@ -127,7 +206,33 @@ impl Market for ZSE{
     }
 
     fn lock_sell(&mut self, kind_to_sell: GoodKind, quantity_to_sell: f32, offer: f32, trader_name: String) -> Result<String, LockSellError> {
-        todo!()
+        if quantity_to_sell < 0.0{
+            return Err(LockSellError::NonPositiveQuantityToSell { negative_quantity_to_sell : quantity_to_sell});
+        }
+        if offer < 0.0{
+            return Err(LockSellError::NonPositiveOffer { negative_offer : offer});
+        }
+        if self.get_lock_sell_token_by_goodkind(&kind_to_sell)!= ("".to_string()){
+            return Err(LockSellError::DefaultGoodAlreadyLocked { token : self.get_lock_sell_token_by_goodkind(&kind_to_sell)});
+        }
+        if self.countlock == MAXLOCK{
+            return Err(LockSellError::MaxAllowedLocksReached);
+        }
+        //TODO Punto 5 da levare non sono in grado di fare ctrl c ctrl v
+        let acceptable_offer = self.get_sell_price(kind_to_sell.clone(), quantity_to_sell);
+        match acceptable_offer {
+            Ok(acceptable_offer) => {
+                if acceptable_offer > offer {
+                    return Err(LockSellError::OfferTooHigh { offered_good_kind : kind_to_sell, offered_good_quantity : quantity_to_sell, high_offer : offer, highest_acceptable_offer : acceptable_offer});
+                }
+            }
+            Err(e) => {
+                //boh
+            }
+        }
+
+        self.updatelock();
+        Ok("".to_string())
     }
 
     fn sell(&mut self, token: String, good: &mut Good) -> Result<Good, SellError> {
@@ -146,4 +251,60 @@ impl ZSE{
         }
     }
 
+    fn get_quantity_by_goodkind(&self, kind: &GoodKind) -> f32 {
+        for good in self.goods.iter(){
+            if good.get_kind() == *kind{
+                return good.get_qty();
+            }
+        }
+        0.0
+    }
+
+    fn get_price_sell_by_goodkind(&self, kind: &GoodKind) -> f32 {
+        for i in 0..self.goods.len(){
+            if self.goods[i].get_kind() == *kind{
+                return self.prices_sell[i];
+            }
+        }
+        0.0
+    }
+
+    fn get_price_buy_by_goodkind(&self, kind: &GoodKind) -> f32 {
+        for i in 0..self.goods.len(){
+            if self.goods[i].get_kind() == *kind{
+                return self.prices_buy[i];
+            }
+        }
+        0.0
+    }
+
+    fn get_lock_sell_token_by_goodkind(&self, kind: &GoodKind) -> String {
+        for i in 0..self.goods.len(){
+            if self.goods[i].get_kind() == *kind{
+                return self.lock_sell[i].clone();
+            }
+        }
+        "".to_string()
+    }
+
+    fn get_lock_buy_token_by_goodkind(&self, kind: &GoodKind) -> String {
+        for i in 0..self.goods.len(){
+            if self.goods[i].get_kind() == *kind{
+                return self.lock_buy[i].clone();
+            }
+        }
+        "".to_string()
+    }
+
+
+    fn fluctuate(&self){
+        todo!()
+    }
+
+    fn updatelock(&mut self){
+
+        //valutare soldi liberi
+        //10000000 totali - 300000 richiesti = 7000000 free
+        self.countlock+=1;
+    }
 }

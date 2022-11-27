@@ -71,9 +71,9 @@ dependencies = [
 
 [[package]]
 name = "unitn_market_2022"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+git://advancedprogramming.disi.unitn.it/index"
-checksum = "0b6df33c96ad0c0f916912e2a88032c7e20492e47a9688f00f94e38a56f11722"
+checksum = "41fc8cbd6074e0bf0594f796ad5343b7b6646c58e8a43c4e42bc1bda173025a6"
 
 [[package]]
 name = "wasi"

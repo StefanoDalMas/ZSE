@@ -8,6 +8,4 @@ fn main() {
     println!("Hello, world!");
     println!("Henlo");
     let mut market = market::ZSE::new_random();
-
-
 }
