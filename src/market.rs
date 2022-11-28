@@ -28,8 +28,8 @@ pub struct ZSE {
 const MAXLOCK :i32 = 2;
 
 
-impl Notifiable for ZSE {
-    fn add_subscriber(&mut self, subscriber: Weak<RefCell<dyn Notifiable>>) {
+impl Notifiable for ZSE{
+    fn add_subscriber(&mut self, subscriber: Box<dyn Notifiable>) {
         todo!()
     }
 
