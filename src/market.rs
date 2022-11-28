@@ -173,7 +173,7 @@ impl Market for ZSE{
         }
         let discount = quantity/self.get_quantity_by_goodkind(&kind) * 10.0; //10% off is max discount
         let price = self.get_price_buy_by_goodkind(&kind);
-        Self::fluctuate(self);
+        //Self::fluctuate(self);
         Ok(price - price*discount/100.0)
     }
 
@@ -182,19 +182,22 @@ impl Market for ZSE{
             return Err(MarketGetterError::NonPositiveQuantityAsked);
         }
         let x = self.get_price_sell_by_goodkind(&kind);
-        Self::fluctuate(self);
+        //Self::fluctuate(self);
         return Ok((x+x*0.02)*quantity);
     }
 
     fn get_goods(&self) -> Vec<GoodLabel> {
-        /*let mut goods = Vec::new();
-        for good in self.goods.iter(){
-            goods.push(GoodLabel::new(good.get_kind(), good.get_qty()));
+        let mut goods = Vec::new();
+        for good in self.goods.iter() {
+            let label = GoodLabel  {
+                good_kind: good.get_kind(),
+                quantity: good.get_qty(),
+                exchange_rate_buy: self.get_price_buy_by_goodkind(&good.get_kind()),
+                exchange_rate_sell: self.get_price_sell_by_goodkind(&good.get_kind()),
+            };
+            goods.push(label);
         }
         goods
-        manca la new di goodlabel cazzoni
-         */
-        todo!()
     }
 
     fn lock_buy(&mut self, kind_to_buy: GoodKind, quantity_to_buy: f32, bid: f32, trader_name: String) -> Result<String, LockBuyError> {
@@ -212,17 +215,21 @@ impl Market for ZSE{
         if offer < 0.0{
             return Err(LockSellError::NonPositiveOffer { negative_offer : offer});
         }
-        if self.get_lock_sell_token_by_goodkind(&kind_to_sell)!= ("".to_string()){
-            return Err(LockSellError::DefaultGoodAlreadyLocked { token : self.get_lock_sell_token_by_goodkind(&kind_to_sell)});
-        }
+        //if self.get_lock_sell_token_by_goodkind(&kind_to_sell) != ("".to_string()) {
+        //    return Err(LockSellError::DefaultGoodAlreadyLocked { token : self.get_lock_sell_token_by_goodkind(&kind_to_sell)});
+        //}
+        self.lock_sell[self.get_index_by_goodkind(&kind_to_sell)] = trader_name;
         if self.countlock == MAXLOCK{
+            //TODO modify MAXLOCK logic
             return Err(LockSellError::MaxAllowedLocksReached);
         }
-        //TODO Punto 5 da levare non sono in grado di fare ctrl c ctrl v
+        if self.goods[0].get_qty() < offer{
+            return Err(LockSellError::InsufficientDefaultGoodQuantityAvailable { offered_good_kind: kind_to_sell, offered_good_quantity: quantity_to_sell, available_good_quantity: self.goods[0].get_qty()});
+        }
         let acceptable_offer = self.get_sell_price(kind_to_sell.clone(), quantity_to_sell);
         match acceptable_offer {
             Ok(acceptable_offer) => {
-                if acceptable_offer > offer {
+                if acceptable_offer < offer {
                     return Err(LockSellError::OfferTooHigh { offered_good_kind : kind_to_sell, offered_good_quantity : quantity_to_sell, high_offer : offer, highest_acceptable_offer : acceptable_offer});
                 }
             }
@@ -232,7 +239,7 @@ impl Market for ZSE{
         }
 
         self.updatelock();
-        Ok("".to_string())
+        Ok(self.lock_sell[self.get_index_by_goodkind(&kind_to_sell)].clone())
     }
 
     fn sell(&mut self, token: String, good: &mut Good) -> Result<Good, SellError> {
@@ -295,6 +302,17 @@ impl ZSE{
         }
         "".to_string()
     }
+
+    fn get_index_by_goodkind(&self, kind: &GoodKind) -> usize {
+        for i in 0..self.goods.len(){
+            if self.goods[i].get_kind() == *kind{
+                return i;
+            }
+        }
+        0
+    }
+
+
 
 
     fn fluctuate(&self){

@@ -1,90 +1,82 @@
-use unitn_market_2022::good::good::Good;
-use unitn_market_2022::good::consts::STARTING_QUANTITY;
-use unitn_market_2022::good::good_kind::{GoodKind as Gk, GoodKind};
-use rand::Rng;
-use unitn_market_2022::market::MarketGetterError;
+use crate::market;
 
+#[cfg(test)]
+mod test{
+    use std::borrow::BorrowMut;
+    use unitn_market_2022::market::{LockSellError, Market};
+    use unitn_market_2022::good::good::Good;
+    use unitn_market_2022::good::good_kind::GoodKind as Gk;
+    use unitn_market_2022::market::LockSellError as LSE;
+    use crate::market::ZSE;
 
-//TODO LEVARLE
-pub const DEFAULT_EUR_YEN_EXCHANGE_RATE: f32 = 143.615;
-pub const DEFAULT_EUR_USD_EXCHANGE_RATE: f32 = 1.03576;
-pub const DEFAULT_EUR_YUAN_EXCHANGE_RATE: f32 = 7.3599;
-
-#[derive(Debug)]
-pub struct Market{
-    pub name: String,
-    pub goods: [Good; 4],
-}
-
-impl Market{
-    pub(crate) fn new() -> Self{
-        //let mut remaining =  STARTING_QTY;
-        let mut remaining =  1000000.0;
-        //create random float number
-        let mut tmp = vec![0.0;4];
-        let mut rng = rand::thread_rng();
-        let mut random_float;
-        for i in 0..3{
-            random_float = rng.gen_range(0.0..remaining);
-            tmp[i] = random_float;
-            remaining -= random_float;
-        }
-        tmp[3] = remaining;
-        let mut market = Market {
-            name: "ZSE".to_string(),
-            goods: [
-                Good::new(Gk::EUR, tmp[0]),
-                Good::new(Gk::USD, tmp[1]*DEFAULT_EUR_USD_EXCHANGE_RATE),
-                Good::new(Gk::YEN, tmp[2]*DEFAULT_EUR_YEN_EXCHANGE_RATE),
-                Good::new(Gk::YUAN, tmp[3]*DEFAULT_EUR_YUAN_EXCHANGE_RATE),
-            ],
-        };
-        market
+    #[test]
+    fn nonPositiveQuantityToSell(){
+        let mut market = ZSE::new_random();
+        //let token = market.lock_sell(super::GoodKind::EUR, 100.0, 1.0, "test".to_string()).unwrap();
+        //let good = market.sell(token, &mut good).unwrap();
+        //assert_eq!(good.get_quantity(), 0.0);
+        //test non positive quantity
+        let token = market.borrow_mut().lock_sell(Gk::EUR, -100.0, 1.0, "test".to_string());
+        assert_eq!(token, Err(LSE::NonPositiveQuantityToSell{negative_quantity_to_sell: -100.0}));
     }
 
-    pub fn new_default() -> Self{
-        let val = 1000000.0;
-        Market {
-            name: "ZSE".to_string(),
-            goods: [
-                Good::new(Gk::EUR, val),
-                Good::new(Gk::USD, val),
-                Good::new(Gk::YEN, val),
-                Good::new(Gk::YUAN, val),
-            ],
+    #[test]
+    fn nonPositiveOffer() {
+        let mut market = ZSE::new_random();
+
+        let token = market.borrow_mut().lock_sell(Gk::EUR, 100.0, -1.0, "test".to_string());
+        assert_eq!(token, Err(LSE::NonPositiveOffer{negative_offer: -1.0}));
+    }
+
+
+    #[test]
+    fn defaultGoodAlreadyLocked() {
+        let mut market = ZSE::new_random();
+
+        let token1 = market.borrow_mut().lock_sell(Gk::EUR, 100.0, 220.0, "test".to_string());
+        match token1 {
+            Ok(token) => {
+                let token2 = market.borrow_mut().lock_sell(Gk::EUR, 100.0, 10.0, "test".to_string());
+                assert_eq!(token2, Err(LSE::DefaultGoodAlreadyLocked{ token }));
+            },
+            Err(e) =>{
+                println!("Error: {:?}", e);
+                assert!(false);
+            }
         }
     }
 
-    pub fn get_market_name(&self) -> &str{
-        &self.name
-    }
-    pub fn get_budget(&mut self) -> Good{
-        self.goods[0].clone()
-    }
-    //TODO
-    pub fn get_buy_price(&self,kind :GoodKind, quantity: i32)-> Result<f32,MarketError> {
-        Err(MarketGetterError::NonPositiveQuantityAsked)
-    }
-    pub fn get_sell_price(&self,kind :GoodKind, quantity: i32)-> Result<f32,MarketError> {
-        Err(MarketGetterError::NonPositiveQuantityAsked)
+    #[test]
+    fn maxAllowedLocksReached(){
+        let mut market = ZSE::new_random();
+        let max_locks = 3;  //modify with the max number of locks allowed
+        let mut token;
+
+        for i in 0..max_locks {
+            token = market.borrow_mut().lock_sell(Gk::EUR, 100.0, 1.0, "test".to_string());
+            match token {
+                Ok(_) => {},
+                Err(e) => panic!("Error: {:?}", e)
+            }
+        }
+
+        token = market.borrow_mut().lock_sell(Gk::EUR, 100.0, 1.0, "test".to_string());
+        assert_eq!(token, Err(LSE::MaxAllowedLocksReached));
     }
 
-    pub fn get_goods(&self) -> Vec<Good>{
-        self.goods.to_vec()
-    }
-
-    pub fn lock_trader_buy_from_market(&mut self, g: GoodKind, p: f32, q: f32,d: String) -> Result<String,MarketError>{
-        Err(MarketGetterError::NonPositiveQuantityAsked)
-    }
-    pub fn trader_buy_from_market(&mut self, token: String, cash: &mut Good) -> Result<Good,MarketError>{
-        Err(MarketGetterError::NonPositiveQuantityAsked)
-    }
-    pub fn lock_trader_sell_to_market(&mut self, g: GoodKind, qty: f32, price: f32,d: String) -> Result<String,MarketError>{
-        Err(MarketGetterError::NonPositiveQuantityAsked)
-    }
-    pub fn trader_sell_to_market(&mut self, token: String, good: &mut Good) -> Result<Good,MarketError>{
-        Err(MarketGetterError::NonPositiveQuantityAsked)
-    }
+    #[test]
+    fn insufficientDefaultGoodQuantityAvailable(){
+        let mut market = ZSE::new_random();
+        let goods = market.borrow_mut().get_goods();
+        let good = Good::new(Gk::USD, 1000.0);
 
 
+        let token = market.borrow_mut().lock_sell(good.get_kind(), good.get_qty(),1000000.0, "test".to_string());
+        assert_eq!(token, LSE::InsufficientDefaultGoodQuantityAvailable {offered_good_kind:good.get_kind(),offered_good_quantity:good.get_qty(),available_good_quantity:market.borrow_mut().get_quantity_by_goodkind(good.get_kind())});
+    }
+
+    #[test]
+    fn offerTooHigh(){
+
+    }
 }
