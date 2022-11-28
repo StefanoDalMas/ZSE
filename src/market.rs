@@ -1,17 +1,15 @@
-use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::fs::File;
 use std::io::BufRead;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use rand::Rng;
 use unitn_market_2022::event::event::Event;
 use unitn_market_2022::event::notifiable::Notifiable;
 use unitn_market_2022::good::good::Good;
 use unitn_market_2022::good::good_kind::{GoodKind as Gk, GoodKind};
 use unitn_market_2022::market::{BuyError, LockBuyError, LockSellError, Market, MarketGetterError, SellError};
-use unitn_market_2022::good::consts::{DEFAULT_EUR_YUAN_EXCHANGE_RATE, DEFAULT_EUR_YEN_EXCHANGE_RATE, DEFAULT_EUR_USD_EXCHANGE_RATE, STARTING_QUANTITY, STARTING_CAPITAL};
+use unitn_market_2022::good::consts::{DEFAULT_EUR_YUAN_EXCHANGE_RATE, DEFAULT_EUR_YEN_EXCHANGE_RATE, DEFAULT_EUR_USD_EXCHANGE_RATE, STARTING_CAPITAL};
 use unitn_market_2022::market::good_label::GoodLabel;
-use crate::wrapper::Wrapper;
 
 
 

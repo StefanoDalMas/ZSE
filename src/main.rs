@@ -1,4 +1,3 @@
-use std::borrow::{Borrow, BorrowMut};
 use unitn_market_2022::market::Market;
 
 mod market;
