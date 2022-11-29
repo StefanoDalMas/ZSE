@@ -11,20 +11,25 @@ use unitn_market_2022::market::{BuyError, LockBuyError, LockSellError, Market, M
 use unitn_market_2022::good::consts::{DEFAULT_EUR_YUAN_EXCHANGE_RATE, DEFAULT_EUR_YEN_EXCHANGE_RATE, DEFAULT_EUR_USD_EXCHANGE_RATE, STARTING_CAPITAL};
 use unitn_market_2022::market::good_label::GoodLabel;
 
-
+//external libraries
+use sha256::digest;
 
 pub struct ZSE {
     pub name: String,
     pub goods: [Good; 4],
     pub prices_sell: [f32; 4],
     pub prices_buy: [f32; 4],
-    pub lock_buy: [String; 4],
-    pub lock_sell: [String; 4],
-    pub countlock: i32,
+    pub lock_buy: [Lock; 4],
+    pub lock_sell: [Lock; 4],
+    pub locked_qty: [f32;4],
 }
-//Shitty stuff
-const MAXLOCK :i32 = 2;
 
+pub struct Lock {
+    pub lock: [String; MAXLOCK],
+    pub last: i32,
+}
+
+const MAXLOCK :usize = 3;
 
 impl Notifiable for ZSE{
     fn add_subscriber(&mut self, subscriber: Box<dyn Notifiable>) {
@@ -69,19 +74,20 @@ impl Market for ZSE{
                 DEFAULT_EUR_YEN_EXCHANGE_RATE,
                 DEFAULT_EUR_YUAN_EXCHANGE_RATE,
             ],
+            //intialize lock_buy with all empty string
             lock_buy: [
-                "".to_string(),
-                "".to_string(),
-                "".to_string(),
-                "".to_string(),
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
             ],
             lock_sell: [
-                "".to_string(),
-                "".to_string(),
-                "".to_string(),
-                "".to_string(),
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
             ],
-            countlock:0,
+            locked_qty: [0.0;4],
         };
         Rc::new(RefCell::new(market))
     }
@@ -108,18 +114,19 @@ impl Market for ZSE{
                 DEFAULT_EUR_YUAN_EXCHANGE_RATE,
             ],
             lock_buy: [
-                "".to_string(),
-                "".to_string(),
-                "".to_string(),
-                "".to_string(),
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
             ],
             lock_sell: [
-                "".to_string(),
-                "".to_string(),
-                "".to_string(),
-                "".to_string(),
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
             ],
-            countlock:0,
+            locked_qty: [0.0;4],
+
         };
         Rc::new(RefCell::new(market))
     }
@@ -210,20 +217,24 @@ impl Market for ZSE{
         if quantity_to_sell < 0.0{
             return Err(LockSellError::NonPositiveQuantityToSell { negative_quantity_to_sell : quantity_to_sell});
         }
+
         if offer < 0.0{
             return Err(LockSellError::NonPositiveOffer { negative_offer : offer});
         }
+
+        // useless code todo remove
         //if self.get_lock_sell_token_by_goodkind(&kind_to_sell) != ("".to_string()) {
         //    return Err(LockSellError::DefaultGoodAlreadyLocked { token : self.get_lock_sell_token_by_goodkind(&kind_to_sell)});
         //}
-        self.lock_sell[self.get_index_by_goodkind(&kind_to_sell)] = trader_name;
-        if self.countlock == MAXLOCK{
-            //TODO modify MAXLOCK logic
+
+        if self.lock_sell[self.get_index_by_goodkind(&kind_to_sell)].last == MAXLOCK as i32{
             return Err(LockSellError::MaxAllowedLocksReached);
         }
+
         if self.goods[0].get_qty() < offer{
             return Err(LockSellError::InsufficientDefaultGoodQuantityAvailable { offered_good_kind: kind_to_sell, offered_good_quantity: quantity_to_sell, available_good_quantity: self.goods[0].get_qty()});
         }
+
         let acceptable_offer = self.get_sell_price(kind_to_sell.clone(), quantity_to_sell);
         match acceptable_offer {
             Ok(acceptable_offer) => {
@@ -231,13 +242,22 @@ impl Market for ZSE{
                     return Err(LockSellError::OfferTooHigh { offered_good_kind : kind_to_sell, offered_good_quantity : quantity_to_sell, high_offer : offer, highest_acceptable_offer : acceptable_offer});
                 }
             }
-            Err(e) => {
-                //boh
-            }
+            Err(e) => { panic!("Errore generazione massima offerta accettabile") }
         }
 
-        self.updatelock();
-        Ok(self.lock_sell[self.get_index_by_goodkind(&kind_to_sell)].clone())
+        //Hash unta
+        let v1 = digest(self.get_index_by_goodkind(&kind_to_sell).to_string());
+        let v2 = digest(quantity_to_sell.to_string());
+        let v3 = digest(offer.to_string());
+        let v4 = digest(trader_name.clone());
+        let token = digest(format!("{}{}{}{}", v1, v2, v3, v4));
+
+        //Update lock
+        let index = self.get_index_by_goodkind(&kind_to_sell);
+        self.lock_sell[index].insert(&token);
+        self.lock_sell[index].last += 1;
+
+        Ok(token)
     }
 
     fn sell(&mut self, token: String, good: &mut Good) -> Result<Good, SellError> {
@@ -283,6 +303,7 @@ impl ZSE{
         0.0
     }
 
+    /*
     fn get_lock_sell_token_by_goodkind(&self, kind: &GoodKind) -> String {
         for i in 0..self.goods.len(){
             if self.goods[i].get_kind() == *kind{
@@ -300,6 +321,7 @@ impl ZSE{
         }
         "".to_string()
     }
+     */
 
     fn get_index_by_goodkind(&self, kind: &GoodKind) -> usize {
         for i in 0..self.goods.len(){
@@ -310,17 +332,18 @@ impl ZSE{
         0
     }
 
-
-
-
     fn fluctuate(&self){
         todo!()
     }
+}
 
-    fn updatelock(&mut self){
-
-        //valutare soldi liberi
-        //10000000 totali - 300000 richiesti = 7000000 free
-        self.countlock+=1;
+impl Lock {
+    fn insert(&mut self, token: &String) {
+        for i in 0..MAXLOCK {
+            if self.lock[i] == "".to_string() {
+                self.lock[i] = token.clone();
+                return;
+            }
+        }
     }
 }

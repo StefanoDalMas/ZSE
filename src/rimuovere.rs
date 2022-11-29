@@ -80,9 +80,17 @@ mod test{
         let goods = market.borrow_mut().get_goods();
         let good = Good::new(Gk::USD, 1000.0);
         let available = goods[0].quantity;
+        let highest_acceptable = market.borrow().get_sell_price(good.get_kind(), good.get_qty()).unwrap();
 
         let token = market.borrow_mut().lock_sell(good.get_kind(), good.get_qty(),available - 1.0, "test".to_string());
-        assert_eq!(token, Err(LSE::OfferTooHigh {offered_good_kind:good.get_kind(), offered_good_quantity:good.get_qty(), high_offer: available - 1.0, highest_acceptable_offer: available}));
-        //sistemare highest_acceptable_offer
+        assert_eq!(token, Err(LSE::OfferTooHigh {offered_good_kind:good.get_kind(), offered_good_quantity:good.get_qty(), high_offer: available - 1.0, highest_acceptable_offer: highest_acceptable}));
+    }
+
+    ///TODO RIMUOVERE
+    #[test]
+    fn itworks(){
+        let mut market = ZSE::new_random();
+        let token = market.borrow_mut().lock_sell(Gk::USD, 100.0, 1.0, "test".to_string());
+        println!("Token: {:?}", token);
     }
 }
