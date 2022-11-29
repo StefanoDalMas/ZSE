@@ -161,7 +161,7 @@ impl Market for ZSE{
 
 
     fn get_name(&self) -> &'static str {
-        todo!()
+        "ZSE"
     }
 
     fn get_budget(&self) -> f32 {
@@ -178,7 +178,7 @@ impl Market for ZSE{
         }
         let discount = quantity/self.get_quantity_by_goodkind(&kind) * 10.0; //10% off is max discount
         let price = self.get_price_buy_by_goodkind(&kind);
-        //Self::fluctuate(self);
+
         Ok(price - price*discount/100.0)
     }
 
@@ -187,7 +187,7 @@ impl Market for ZSE{
             return Err(MarketGetterError::NonPositiveQuantityAsked);
         }
         let x = self.get_price_sell_by_goodkind(&kind);
-        //Self::fluctuate(self);
+
         return Ok((x+x*0.02)*quantity);
     }
 
@@ -206,7 +206,39 @@ impl Market for ZSE{
     }
 
     fn lock_buy(&mut self, kind_to_buy: GoodKind, quantity_to_buy: f32, bid: f32, trader_name: String) -> Result<String, LockBuyError> {
-        todo!()
+        let index = self.get_index_by_goodkind(&kind_to_buy);
+        if quantity_to_buy < 0.0{
+            return Err(LockBuyError::NonPositiveQuantityToBuy {negative_quantity_to_buy: quantity_to_buy});
+        }
+        if bid < 0.0{
+            return Err(LockBuyError::NonPositiveBid {negative_bid: bid});
+        }
+        //3 skippata implementiamo multiple locks
+        if self.lock_buy[index].last == MAXLOCK as i32{
+            return Err(LockBuyError::MaxAllowedLocksReached);
+        }
+        if (self.goods[index].get_qty() - self.locked_qty[index]) < quantity_to_buy{
+            return Err(LockBuyError::InsufficientGoodQuantityAvailable {requested_good_kind : kind_to_buy.clone(), requested_good_quantity : quantity_to_buy, available_good_quantity : self.goods[index].get_qty()})
+        }
+        let minimum_bid = self.get_buy_price(kind_to_buy.clone(),quantity_to_buy);
+        match minimum_bid {
+            Ok(minimum) => {
+                if minimum > bid {
+                    return Err(LockBuyError::BidTooLow {requested_good_kind:kind_to_buy, requested_good_quantity:quantity_to_buy, low_bid:bid , lowest_acceptable_bid: minimum});
+                }
+            }
+            Err(e) => { panic!("Errore generazione minima offerta accettabile in acquisto") }
+        }
+
+        let token = self.hash(&kind_to_buy,quantity_to_buy,bid,&trader_name);
+
+        //Update lock
+
+        self.lock_buy[index].insert(&token);
+        self.lock_buy[index].last += 1;
+        self.locked_qty[index] += quantity_to_buy;
+
+        Ok(token)
     }
 
     fn buy(&mut self, token: String, cash: &mut Good) -> Result<Good, BuyError> {
@@ -214,6 +246,7 @@ impl Market for ZSE{
     }
 
     fn lock_sell(&mut self, kind_to_sell: GoodKind, quantity_to_sell: f32, offer: f32, trader_name: String) -> Result<String, LockSellError> {
+        let index = self.get_index_by_goodkind(&kind_to_sell);
         if quantity_to_sell < 0.0{
             return Err(LockSellError::NonPositiveQuantityToSell { negative_quantity_to_sell : quantity_to_sell});
         }
@@ -227,7 +260,7 @@ impl Market for ZSE{
         //    return Err(LockSellError::DefaultGoodAlreadyLocked { token : self.get_lock_sell_token_by_goodkind(&kind_to_sell)});
         //}
 
-        if self.lock_sell[self.get_index_by_goodkind(&kind_to_sell)].last == MAXLOCK as i32{
+        if self.lock_sell[index].last == MAXLOCK as i32{
             return Err(LockSellError::MaxAllowedLocksReached);
         }
 
@@ -242,18 +275,12 @@ impl Market for ZSE{
                     return Err(LockSellError::OfferTooHigh { offered_good_kind : kind_to_sell, offered_good_quantity : quantity_to_sell, high_offer : offer, highest_acceptable_offer : acceptable_offer});
                 }
             }
-            Err(e) => { panic!("Errore generazione massima offerta accettabile") }
+            Err(e) => { panic!("Errore generazione massima offerta accettabile in vendita") }
         }
 
-        //Hash unta
-        let v1 = digest(self.get_index_by_goodkind(&kind_to_sell).to_string());
-        let v2 = digest(quantity_to_sell.to_string());
-        let v3 = digest(offer.to_string());
-        let v4 = digest(trader_name.clone());
-        let token = digest(format!("{}{}{}{}", v1, v2, v3, v4));
+        let token = self.hash(&kind_to_sell,quantity_to_sell,offer,&trader_name);
 
         //Update lock
-        let index = self.get_index_by_goodkind(&kind_to_sell);
         self.lock_sell[index].insert(&token);
         self.lock_sell[index].last += 1;
 
@@ -334,6 +361,15 @@ impl ZSE{
 
     fn fluctuate(&self){
         todo!()
+    }
+
+    fn hash(&self,v1:&GoodKind,v2:f32,v3:f32,v4:&String) -> String{
+        //Hash unta
+        let a = digest(self.get_index_by_goodkind(&v1).to_string());
+        let b = digest(v2.to_string());
+        let c = digest(v3.to_string());
+        let d = digest(v4.clone());
+        digest(format!("{}{}{}{}", a, b, c, d))
     }
 }
 

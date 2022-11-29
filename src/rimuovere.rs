@@ -1,27 +1,34 @@
-
 #[cfg(test)]
 mod test{
+    use std::cell::RefCell;
+    use std::rc::Rc;
     use unitn_market_2022::market::Market;
     use unitn_market_2022::good::good::Good;
     use unitn_market_2022::good::good_kind::GoodKind as Gk;
-    use unitn_market_2022::market;
     use unitn_market_2022::market::LockSellError as LSE;
-    use crate::market::ZSE;
 
+    /// modify accordingly to your implementation
+    use crate::market::ZSE;
+    pub fn init() -> Rc<RefCell<dyn Market>>{
+        ZSE::new_random()
+    }
+    /// modify with the max locks your implementation allows
+    pub fn init_lock() -> i32 {
+        3
+    }
+
+    //tests
     #[test]
     fn nonPositiveQuantityToSell(){
-        let mut market = ZSE::new_random();
-        //let token = market.lock_sell(super::GoodKind::EUR, 100.0, 1.0, "test".to_string()).unwrap();
-        //let good = market.sell(token, &mut good).unwrap();
-        //assert_eq!(good.get_quantity(), 0.0);
-        //test non positive quantity
+        let mut market = init();
+
         let token = market.borrow_mut().lock_sell(Gk::EUR, -100.0, 1.0, "test".to_string());
         assert_eq!(token, Err(LSE::NonPositiveQuantityToSell{negative_quantity_to_sell: -100.0}));
     }
 
     #[test]
     fn nonPositiveOffer() {
-        let mut market = ZSE::new_random();
+        let mut market = init();
 
         let token = market.borrow_mut().lock_sell(Gk::EUR, 100.0, -1.0, "test".to_string());
         assert_eq!(token, Err(LSE::NonPositiveOffer{negative_offer: -1.0}));
@@ -30,7 +37,7 @@ mod test{
 
     #[test]
     fn defaultGoodAlreadyLocked() {
-        let mut market = ZSE::new_random();
+        let mut market = init();
 
         let token1 = market.borrow_mut().lock_sell(Gk::EUR, 100.0, 220.0, "test".to_string());
         match token1 {
@@ -47,8 +54,8 @@ mod test{
 
     #[test]
     fn maxAllowedLocksReached(){
-        let mut market = ZSE::new_random();
-        let max_locks = 3;  //modify with the max number of locks allowed
+        let mut market = init();
+        let max_locks = init_lock();
         let mut token;
 
         for i in 0..max_locks {
@@ -65,7 +72,7 @@ mod test{
 
     #[test]
     fn insufficientDefaultGoodQuantityAvailable(){
-        let mut market = ZSE::new_random();
+        let mut market = init();
         let goods = market.borrow_mut().get_goods();
         let good = Good::new(Gk::USD, 1000.0);
         let available = goods[0].quantity;
@@ -76,7 +83,7 @@ mod test{
 
     #[test]
     fn offerTooHigh(){
-        let mut market = ZSE::new_random();
+        let mut market = init();
         let goods = market.borrow_mut().get_goods();
         let good = Good::new(Gk::USD, 1000.0);
         let available = goods[0].quantity;
@@ -86,10 +93,9 @@ mod test{
         assert_eq!(token, Err(LSE::OfferTooHigh {offered_good_kind:good.get_kind(), offered_good_quantity:good.get_qty(), high_offer: available - 1.0, highest_acceptable_offer: highest_acceptable}));
     }
 
-    ///TODO RIMUOVERE
     #[test]
-    fn itworks(){
-        let mut market = ZSE::new_random();
+    fn test_working_function(){
+        let mut market = init();
         let token = market.borrow_mut().lock_sell(Gk::USD, 100.0, 1.0, "test".to_string());
         println!("Token: {:?}", token);
     }
