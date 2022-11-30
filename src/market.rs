@@ -1,7 +1,9 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufRead;
 use std::rc::Rc;
+use std::usize::MAX;
 use rand::Rng;
 use unitn_market_2022::event::event::Event;
 use unitn_market_2022::event::notifiable::Notifiable;
@@ -13,6 +15,7 @@ use unitn_market_2022::market::good_label::GoodLabel;
 
 //external libraries
 use sha256::digest;
+use unitn_market_2022::good::good_error::GoodSplitError;
 
 pub struct ZSE {
     pub name: String,
@@ -22,10 +25,13 @@ pub struct ZSE {
     pub lock_buy: [Lock; 4],
     pub lock_sell: [Lock; 4],
     pub locked_qty: [f32;4],
+    pub token_sell: HashMap<String, bool>,
+    pub token_buy : HashMap<String,bool>,
 }
 
 pub struct Lock {
     pub lock: [String; MAXLOCK],
+    pub agreed_qty: [f32; MAXLOCK],
     pub last: i32,
 }
 
@@ -76,18 +82,20 @@ impl Market for ZSE{
             ],
             //intialize lock_buy with all empty string
             lock_buy: [
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
             ],
             lock_sell: [
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
             ],
             locked_qty: [0.0;4],
+            token_sell: HashMap::new(),
+            token_buy : HashMap::new(),
         };
         Rc::new(RefCell::new(market))
     }
@@ -112,21 +120,21 @@ impl Market for ZSE{
                 DEFAULT_EUR_USD_EXCHANGE_RATE,
                 DEFAULT_EUR_YEN_EXCHANGE_RATE,
                 DEFAULT_EUR_YUAN_EXCHANGE_RATE,
-            ],
-            lock_buy: [
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+            ],lock_buy: [
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
             ],
             lock_sell: [
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
-                Lock { lock: [String::from(""),String::from(""),String::from("")], last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
+                Lock { lock: [String::from(""),String::from(""),String::from("")],agreed_qty: [0.0; MAXLOCK],last: 0 },
             ],
             locked_qty: [0.0;4],
-
+            token_sell: HashMap::new(),
+            token_buy : HashMap::new(),
         };
         Rc::new(RefCell::new(market))
     }
@@ -234,15 +242,54 @@ impl Market for ZSE{
 
         //Update lock
 
-        self.lock_buy[index].insert(&token);
+        self.lock_buy[index].insert(&token, quantity_to_buy);
         self.lock_buy[index].last += 1;
         self.locked_qty[index] += quantity_to_buy;
+
+        //insert into Hashmap
+        self.token_buy.insert(token.clone(), true);
 
         Ok(token)
     }
 
     fn buy(&mut self, token: String, cash: &mut Good) -> Result<Good, BuyError> {
-        todo!()
+        if !self.token_buy.contains_key(&*token){
+            return Err(BuyError::UnrecognizedToken {unrecognized_token : token});
+        }
+        if self.token_buy.contains_key(&*token) && !self.token_buy[&token] {
+            return Err(BuyError::ExpiredToken {expired_token : token});
+        }
+        if cash.get_kind() != Gk::EUR{
+            return Err(BuyError::GoodKindNotDefault { non_default_good_kind : cash.get_kind()});
+        }
+        let (gk, pos) = self.get_kind_by_token(&token, true);
+        let index= self.get_index_by_goodkind(&gk);
+        let agreed_quantity = self.lock_buy[index].agreed_qty[pos];
+        if cash.get_qty() != agreed_quantity{
+            return Err(BuyError::InsufficientGoodQuantity {contained_quantity : cash.get_qty() , pre_agreed_quantity: agreed_quantity})
+        }
+
+        //buy good
+        let _ = match cash.split(cash.get_qty()) {
+            Ok(profit) => self.goods[0].merge(profit),
+            Err(e) => panic!("Errore nella split: {:?}", e),
+        };
+        //remove lock that was in place
+        self.token_buy.insert(token.clone(), false);
+        self.lock_buy[index].last -= 1;
+        self.lock_buy[index].lock[pos] = "".to_string();
+        self.lock_buy[index].agreed_qty[pos] = 0.0;
+
+        //notify
+
+        //update price
+        self.fluctuate();
+        //return
+        let mut ret = Err(GoodSplitError::NotEnoughQuantityToSplit);
+        while ret.is_err() {
+            ret = self.goods[index].split(agreed_quantity);
+        }
+        Ok(ret.unwrap())
     }
 
     fn lock_sell(&mut self, kind_to_sell: GoodKind, quantity_to_sell: f32, offer: f32, trader_name: String) -> Result<String, LockSellError> {
@@ -281,8 +328,10 @@ impl Market for ZSE{
         let token = self.hash(&kind_to_sell,quantity_to_sell,offer,&trader_name);
 
         //Update lock
-        self.lock_sell[index].insert(&token);
+        self.lock_sell[index].insert(&token, quantity_to_sell);
         self.lock_sell[index].last += 1;
+        //Insert into Hashmap
+        self.token_sell.insert(token.clone(), true);
 
         Ok(token)
     }
@@ -359,6 +408,35 @@ impl ZSE{
         0
     }
 
+    fn get_kind_by_token(&self, token: &String, mode: bool) -> (GoodKind, usize) {
+        let mut var = 0;
+        let mut index = 6;
+        // mode : buy or sell
+        for i in 0..self.lock_buy.len() {
+            for j in 0..MAXLOCK {
+                if mode {
+                    if self.lock_buy[i].lock[j] == *token {
+                        var = i;
+                        index = j;
+                        break;
+                    }
+                } else {
+                    if self.lock_sell[i].lock[j] == *token {
+                        var = i;
+                        index = j;
+                        break;
+                    }
+                }
+            }
+        }
+        return match var {
+            1 => (GoodKind::USD, index),
+            2 => (GoodKind::YEN, index),
+            3 => (GoodKind::YUAN, index),
+            _ => (GoodKind::EUR,index),
+        }
+    }
+
     fn fluctuate(&self){
         todo!()
     }
@@ -374,12 +452,19 @@ impl ZSE{
 }
 
 impl Lock {
-    fn insert(&mut self, token: &String) {
+    fn insert(&mut self, token: &String, qty: f32) {
         for i in 0..MAXLOCK {
             if self.lock[i] == "".to_string() {
                 self.lock[i] = token.clone();
+                self.agreed_qty[i] = qty;
                 return;
             }
         }
     }
 }
+
+
+//TODO notifiable trait, get_buy price and sell price, buy and sell,
+// fluctuate -> modify prices over time and quantity
+// reset market(?)
+// metadata
