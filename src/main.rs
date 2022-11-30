@@ -6,7 +6,7 @@ use sha256::digest;
 
 mod market;
 mod wrapper;
-mod rimuovere;
+mod tests;
 
 #[derive(Hash)]
 struct request{

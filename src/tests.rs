@@ -58,7 +58,7 @@ mod test{
         let max_locks = init_lock();
         let mut token;
 
-        for i in 0..max_locks {
+        for _ in 0..max_locks {
             token = market.borrow_mut().lock_sell(Gk::EUR, 100.0, 1.0, "test".to_string());
             match token {
                 Ok(_) => {},
