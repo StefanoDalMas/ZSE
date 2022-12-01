@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 use unitn_market_2022::market::Market;
 
 use sha256::digest;
+use unitn_market_2022::event::event::{Event, EventKind};
 
 mod market;
 mod wrapper;
@@ -18,6 +19,7 @@ struct request{
 fn main() {
     println!("Henlo");
     let mut market = market::ZSE::new_random();
+
 }
 
 

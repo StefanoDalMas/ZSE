@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::BufRead;
 use std::rc::Rc;
 use rand::Rng;
-use unitn_market_2022::event::event::Event;
+use unitn_market_2022::event::event::{Event, EventKind};
 use unitn_market_2022::event::notifiable::Notifiable;
 use unitn_market_2022::good::good::Good;
 use unitn_market_2022::good::good_kind::{GoodKind as Gk, GoodKind};
@@ -37,9 +37,17 @@ pub struct Contract {
     pub token: String,
     pub quantity: f32,
     pub price: f32,
+    pub lock_counter:i32,
+}
+
+#[derive(Copy, Clone)]
+pub enum Mode {
+    Buy,
+    Sell,
 }
 
 const MAXLOCK :usize = 3; //DO NOT TOUCH
+const MAXTIME :i32 = 15; //DO NOT TOUCH
 
 impl Notifiable for ZSE{
     fn add_subscriber(&mut self, subscriber: Box<dyn Notifiable>) {
@@ -47,7 +55,7 @@ impl Notifiable for ZSE{
     }
 
     fn on_event(&mut self, event: Event) {
-        todo!()
+        self.increment_lock_counter_and_reset();
     }
 }
 
@@ -64,7 +72,7 @@ impl Market for ZSE{
             remaining -= random_float;
         }
         tmp[3] = remaining;
-        let mut market = ZSE {
+        let market = ZSE {
             name: "ZSE".to_string(),
             goods: [
                 Good::new(Gk::EUR, tmp[0]),
@@ -91,11 +99,13 @@ impl Market for ZSE{
             token_sell: HashMap::new(),
             token_buy : HashMap::new(),
         };
+
+        //TODO print market init values into file
         Rc::new(RefCell::new(market))
     }
 
     fn new_with_quantities(eur: f32, yen: f32, usd: f32, yuan: f32) -> Rc<RefCell<dyn Market>> where Self: Sized {
-        let mut market = ZSE {
+        let market = ZSE {
             name: "ZSE".to_string(),
             goods: [
                 Good::new(Gk::EUR, eur),
@@ -121,11 +131,12 @@ impl Market for ZSE{
             token_sell: HashMap::new(),
             token_buy : HashMap::new(),
         };
+        //TODO print market init values into file
         Rc::new(RefCell::new(market))
     }
 
     fn new_file(path: &str) -> Rc<RefCell<dyn Market>> where Self: Sized {
-        let mut file = File::open(path);
+        let file = File::open(path);
         if file.is_err(){
             return Self::new_random();
         }
@@ -134,7 +145,7 @@ impl Market for ZSE{
         let mut yen = 0.0;
         let mut yuan = 0.0;
         //create BufferedReader
-        let mut reader = std::io::BufReader::new(file.unwrap());
+        let reader = std::io::BufReader::new(file.unwrap());
         for line in reader.lines(){
             let line = line.unwrap();
             let mut split = line.split(" ");
@@ -149,9 +160,9 @@ impl Market for ZSE{
                 _ => {}
             }
         }
+        //TODO print market init values into file
         Self::new_with_quantities(eur, yen, usd, yuan)
     }
-
 
     fn get_name(&self) -> &'static str {
         "ZSE"
@@ -210,7 +221,7 @@ impl Market for ZSE{
         if self.lock_buy[index].last == MAXLOCK as i32{
             return Err(LockBuyError::MaxAllowedLocksReached);
         }
-        if (self.goods[index].get_qty() - self.locked_qty[index]) < quantity_to_buy{
+        if (self.goods[index].get_qty() - self.locked_qty[index] -2.0) < quantity_to_buy{
             return Err(LockBuyError::InsufficientGoodQuantityAvailable {requested_good_kind : kind_to_buy.clone(), requested_good_quantity : quantity_to_buy, available_good_quantity : self.goods[index].get_qty()})
         }
         let minimum_bid = self.get_buy_price(kind_to_buy.clone(),quantity_to_buy);
@@ -247,7 +258,7 @@ impl Market for ZSE{
         if cash.get_kind() != Gk::EUR{
             return Err(BuyError::GoodKindNotDefault { non_default_good_kind : cash.get_kind()});
         }
-        let (gk, pos) = self.get_kind_by_token(&token, true);
+        let (gk, pos) = self.get_kind_by_token(&token, Mode::Buy);
         let index= self.get_index_by_goodkind(&gk);
         let agreed_quantity = self.lock_buy[index].lock[pos].quantity;
         if cash.get_qty() < agreed_quantity{
@@ -260,12 +271,7 @@ impl Market for ZSE{
             Err(e) => panic!("Errore nella split: {:?}", e),
         };
         //remove lock that was in place
-        self.token_buy.insert(token.clone(), false);
-        self.lock_buy[index].last -= 1;
-        self.lock_buy[index].lock[pos].token = "".to_string();
-        self.lock_buy[index].lock[pos].quantity = 0.0;
-        self.lock_buy[index].lock[pos].price = 0.0;
-
+        self.remove(token.clone(),index, pos, Mode::Buy);
         //notify
 
         //update price
@@ -275,6 +281,7 @@ impl Market for ZSE{
         while ret.is_err() {
             ret = self.goods[index].split(agreed_quantity);
         }
+        self.locked_qty[index] -= agreed_quantity;
         Ok(ret.unwrap())
     }
 
@@ -330,7 +337,7 @@ impl Market for ZSE{
             return Err(SellError::ExpiredToken {expired_token : token});
         }
 
-        let (gk, pos) = self.get_kind_by_token(&token, true);
+        let (gk, pos) = self.get_kind_by_token(&token, Mode::Sell);
         let index= self.get_index_by_goodkind(&gk);
         let agreed_quantity = self.lock_sell[index].lock[pos].quantity;
         let agreed_price = self.lock_sell[index].lock[pos].price;
@@ -348,11 +355,7 @@ impl Market for ZSE{
             Err(e) => panic!("Errore nella split: {:?}", e),
         };
         //remove lock that was in place
-        self.token_sell.insert(token.clone(), false);
-        self.lock_sell[index].last -= 1;
-        self.lock_sell[index].lock[pos].token = "".to_string();
-        self.lock_sell[index].lock[pos].quantity = 0.0;
-        self.lock_sell[index].lock[pos].price = 0.0;
+        self.remove(token.clone(), index, pos, Mode::Sell);
 
         //notify
 
@@ -363,6 +366,7 @@ impl Market for ZSE{
         while ret.is_err() {
             ret = self.goods[0].split(agreed_price);
         }
+
         Ok(ret.unwrap())
     }
 }
@@ -405,26 +409,6 @@ impl ZSE{
         0.0
     }
 
-    /*
-    fn get_lock_sell_token_by_goodkind(&self, kind: &GoodKind) -> String {
-        for i in 0..self.goods.len(){
-            if self.goods[i].get_kind() == *kind{
-                return self.lock_sell[i].clone();
-            }
-        }
-        "".to_string()
-    }
-
-    fn get_lock_buy_token_by_goodkind(&self, kind: &GoodKind) -> String {
-        for i in 0..self.goods.len(){
-            if self.goods[i].get_kind() == *kind{
-                return self.lock_buy[i].clone();
-            }
-        }
-        "".to_string()
-    }
-     */
-
     fn get_index_by_goodkind(&self, kind: &GoodKind) -> usize {
         for i in 0..self.goods.len(){
             if self.goods[i].get_kind() == *kind{
@@ -434,25 +418,28 @@ impl ZSE{
         0
     }
 
-    fn get_kind_by_token(&self, token: &String, mode: bool) -> (GoodKind, usize) {
+    fn get_kind_by_token(&self, token: &String, mode: Mode) -> (GoodKind, usize) {
         let mut var = 0;
         let mut index = 6;
         // mode : buy or sell
         for i in 0..self.lock_buy.len() {
             for j in 0..MAXLOCK {
-                if mode {
-                    if self.lock_buy[i].lock[j].token == *token {
-                        var = i;
-                        index = j;
-                        break;
+                let _ = match mode {
+                    Mode::Buy => {
+                        if self.lock_buy[i].lock[j].token == *token {
+                            var = i;
+                            index = j;
+                            break;
+                        }
                     }
-                } else {
-                    if self.lock_sell[i].lock[j].token == *token {
-                        var = i;
-                        index = j;
-                        break;
+                    Mode::Sell => {
+                        if self.lock_sell[i].lock[j].token == *token {
+                            var = i;
+                            index = j;
+                            break;
+                        }
                     }
-                }
+                };
             }
         }
         return match var {
@@ -473,7 +460,47 @@ impl ZSE{
         let b = digest(v2.to_string());
         let c = digest(v3.to_string());
         let d = digest(v4.clone());
-        digest(format!("{}{}{}{}", a, b, c, d))
+        let mut rng = rand::thread_rng();
+        let salt = rng.gen::<u32>();
+        digest(format!("{}{}{}{}{}", a, b, c, d, salt))
+    }
+
+    fn remove(&mut self, token: String,index:usize,pos:usize, mode: Mode) {
+        let _ = match mode {
+            Mode::Buy => {
+                self.token_buy.insert(token, false);
+                self.lock_buy[index].last -= 1;
+                self.lock_buy[index].lock[pos].remove();
+            },
+            Mode::Sell => {
+                self.token_sell.insert(token, false);
+                self.lock_sell[index].last -= 1;
+                self.lock_sell[index].lock[pos].remove();
+            }
+        };
+    }
+
+    fn increment_lock_counter_and_reset(&mut self){
+        for i in 0..4 {
+            for j in 0..MAXLOCK{
+                //increment counter
+                if self.lock_buy[i].lock[j].token != "".to_string() {
+                    self.lock_buy[i].lock[j].lock_counter += 1;
+                }
+                if self.lock_sell[i].lock[j].token != "".to_string() {
+                    self.lock_sell[i].lock[j].lock_counter += 1;
+                }
+                //If maximum is reached, remove it
+                if self.lock_buy[i].lock[j].lock_counter >= MAXTIME {
+                    self.token_buy.insert(self.lock_buy[i].lock[j].token.clone(),false);
+                    self.lock_buy[i].lock[j].remove();
+                }
+                if self.lock_sell[i].lock[j].lock_counter >= MAXTIME {
+                    self.token_sell.insert(self.lock_buy[i].lock[j].token.clone(),false);
+                    self.lock_sell[i].lock[j].remove();
+                }
+            }
+        }
     }
 }
 
@@ -484,8 +511,17 @@ impl Contract{
             token: "".to_string(),
             quantity:0.0,
             price:0.0,
+            lock_counter:0,
         }
     }
+
+    fn remove(&mut self){
+        self.token = "".to_string();
+        self.quantity = 0.0;
+        self.price = 0.0;
+        self.lock_counter = 0;
+    }
+
 }
 impl Lock {
     fn new() -> Self {
@@ -509,7 +545,9 @@ impl Lock {
 
 
 
-//TODO notifiable trait, get_buy price and sell price, buy and sell,
-// fluctuate -> modify prices over time and quantity
-// reset market(?)
+//TODO notifiable trait,
 // metadata
+// reset market(?)
+// fluctuate -> modify prices over time and quantity
+// get_buy price and sell price numbers
+// add on event in all functions
