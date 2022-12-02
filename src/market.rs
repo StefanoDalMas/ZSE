@@ -1,7 +1,11 @@
+extern crate chrono;
+use chrono::Local;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::BufRead;
+use std::fmt::format;
+use std::fs::{File, OpenOptions};
+use std::io::{BufRead, Write};
+use std::path::Path;
 use std::rc::Rc;
 use rand::Rng;
 use unitn_market_2022::event::event::{Event, EventKind};
@@ -48,6 +52,7 @@ pub enum Mode {
 
 const MAXLOCK :usize = 3; //DO NOT TOUCH
 const MAXTIME :i32 = 15; //DO NOT TOUCH
+const PATH_LOG: &str = "log_ZSE.txt";
 
 impl Notifiable for ZSE{
     fn add_subscriber(&mut self, subscriber: Box<dyn Notifiable>) {
@@ -98,9 +103,37 @@ impl Market for ZSE{
             locked_qty: [0.0;4],
             token_sell: HashMap::new(),
             token_buy : HashMap::new(),
-        };
 
-        //TODO print market init values into file
+        };
+        //create file todo SHOULD BE A FUNCTION IDK HOW TO CALL IT INSIDE NEW
+        let mut file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open(PATH_LOG);
+        match file{
+            Ok(file) => file,
+            Err(_) => panic!("Error opening / creating file"),
+        };
+        //TODO format values
+        let mut file = OpenOptions::new().append(true).open(PATH_LOG);
+        match file {
+            Ok(mut file) => {
+                //get current time
+                let date = Local::now();
+                let atm = date.format("%Y:%m:%d:%H:%M:%S:%3f");
+                let logcode = format!(
+                    "MARKET INITIALIZATION \n EUR: {} \n USD: {} \n YEN: {} \n YUAN: {} \n END MARKET INITIALIZATION",
+                    tmp[0], tmp[1], tmp[2], tmp[3]); //penso siano qua i valori
+                let s = format!("ZSE|{}|{}\n",atm,logcode); // !!!
+                let write = file.write(s.as_bytes()); // change this if needed
+                match write {
+                    Ok(_) => {} //whacky
+                    Err(_) => println!("Error writing to file"),
+                }
+            }
+            Err(_) => panic!("Error opening file"),
+        }
         Rc::new(RefCell::new(market))
     }
 
@@ -502,6 +535,40 @@ impl ZSE{
             }
         }
     }
+    /*
+    fn check_create_file(){
+        let mut file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open("log_ZSE.txt");
+        match file{
+            Ok(file) => file,
+            Err(_) => panic!("Error opening / creating file"),
+        };
+    }
+    */
+    fn print_metadata(buffer:String){
+        let mut file = OpenOptions::new().append(true).open(PATH_LOG); //open
+        match file { //check errors
+            Ok(mut file) => {
+                let write = file.write_all(buffer.as_bytes()); //write into log
+                match write {
+                    Ok(_) => {} //whacky
+                    Err(_) => println!("Error writing to file"),
+                }
+            }
+            Err(_) => panic!("Error opening file"),
+        }
+    }
+
+    //TODO sto per scendere dal treno, è stra unto ma questa roba prende il tempo come vogliono loro
+    fn get_time(){
+        let date = Local::now();
+        let atm = date.format("%Y:%m:%d:%H:%M:%S:%3f");
+        println!("{}",atm);
+
+    }
 }
 
 
@@ -515,7 +582,7 @@ impl Contract{
         }
     }
 
-    fn remove(&mut self){
+    fn remove(&mut self) {
         self.token = "".to_string();
         self.quantity = 0.0;
         self.price = 0.0;
@@ -546,8 +613,10 @@ impl Lock {
 
 
 //TODO notifiable trait,
-// metadata
+// metadata --> In new and where I have to update the file
 // reset market(?)
 // fluctuate -> modify prices over time and quantity
 // get_buy price and sell price numbers
 // add on event in all functions
+// modify visibility of functions
+
