@@ -1,4 +1,6 @@
 extern crate chrono;
+
+use std::borrow::Borrow;
 use chrono::Local;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -30,6 +32,7 @@ pub struct ZSE {
     pub locked_qty: [f32; 4],
     pub token_sell: HashMap<String, bool>,
     pub token_buy : HashMap<String,bool>,
+    pub markets: Vec<dyn Notifiable>,
 }
 
 pub struct Lock {
@@ -56,11 +59,24 @@ const PATH_LOG: &str = "log_ZSE.txt";
 
 impl Notifiable for ZSE{
     fn add_subscriber(&mut self, subscriber: Box<dyn Notifiable>) {
-        todo!()
+        self.markets.push(*subscriber);
     }
 
     fn on_event(&mut self, event: Event) {
+        //internal event despite the kind of event
         self.increment_lock_counter_and_reset();
+        let kind = event.clone().kind;
+        // todo take actions based on event kind
+        //notify others
+        match kind {
+            EventKind::Wait =>{} //skip
+            _ => {
+                for market in self.markets.iter_mut() {
+                    market.on_event(event.clone());
+                }
+            }
+        }
+
     }
 }
 
@@ -103,37 +119,18 @@ impl Market for ZSE{
             locked_qty: [0.0;4],
             token_sell: HashMap::new(),
             token_buy : HashMap::new(),
+            markets: Vec::new(),
 
         };
         //create file todo SHOULD BE A FUNCTION IDK HOW TO CALL IT INSIDE NEW
-        let mut file = OpenOptions::new()
-            .write(true)
-            .append(true)
-            .create(true)
-            .open(PATH_LOG);
-        match file{
-            Ok(file) => file,
-            Err(_) => panic!("Error opening / creating file"),
-        };
+        init_file();
+
         //TODO format values
-        let mut file = OpenOptions::new().append(true).open(PATH_LOG);
-        match file {
-            Ok(mut file) => {
-                //get current time
-                let date = Local::now();
-                let atm = date.format("%Y:%m:%d:%H:%M:%S:%3f");
-                let logcode = format!(
-                    "MARKET INITIALIZATION \n EUR: {} \n USD: {} \n YEN: {} \n YUAN: {} \n END MARKET INITIALIZATION",
-                    tmp[0], tmp[1], tmp[2], tmp[3]); //penso siano qua i valori
-                let s = format!("ZSE|{}|{}\n",atm,logcode); // !!!
-                let write = file.write(s.as_bytes()); // change this if needed
-                match write {
-                    Ok(_) => {} //whacky
-                    Err(_) => println!("Error writing to file"),
-                }
-            }
-            Err(_) => panic!("Error opening file"),
-        }
+        let logcode = format!(
+            "MARKET INITIALIZATION \n EUR: {:+e} \n USD: {:+e} \n YEN: {:+e} \n YUAN: {:+e} \n END MARKET INITIALIZATION",
+            tmp[0], tmp[1], tmp[2], tmp[3]);
+        print_metadata(logcode);
+
         Rc::new(RefCell::new(market))
     }
 
@@ -163,8 +160,15 @@ impl Market for ZSE{
             locked_qty: [0.0;4],
             token_sell: HashMap::new(),
             token_buy : HashMap::new(),
+            markets: Vec::new(),
         };
-        //TODO print market init values into file
+        init_file();
+        //Create buffer
+        let logcode = format!(
+            "MARKET INITIALIZATION \n EUR: {:+e} \n USD: {:+e} \n YEN: {:+e} \n YUAN: {:+e} \n END MARKET INITIALIZATION",
+            eur, usd, yen, yuan);
+        print_metadata(logcode);
+
         Rc::new(RefCell::new(market))
     }
 
@@ -194,6 +198,12 @@ impl Market for ZSE{
             }
         }
         //TODO print market init values into file
+        init_file();
+        //create buffer
+        let logcode = format!(
+            "MARKET INITIALIZATION \n EUR: {:+e} \n USD: {:+e} \n YEN: {:+e} \n YUAN: {:+e} \n END MARKET INITIALIZATION",
+            eur, usd, yen, yuan);
+        print_metadata(logcode);
         Self::new_with_quantities(eur, yen, usd, yuan)
     }
 
@@ -243,24 +253,30 @@ impl Market for ZSE{
     }
 
     fn lock_buy(&mut self, kind_to_buy: GoodKind, quantity_to_buy: f32, bid: f32, trader_name: String) -> Result<String, LockBuyError> {
+        let logcode = format!("LOCK_BUY-{}-KIND_TO_BUY:{}-QUANTITY_TO_BUY:{}-BID:{}-ERROR",trader_name.clone(),kind_to_buy,quantity_to_buy,bid);
         let index = self.get_index_by_goodkind(&kind_to_buy);
         if quantity_to_buy < 0.0{
+            print_metadata(logcode);
             return Err(LockBuyError::NonPositiveQuantityToBuy {negative_quantity_to_buy: quantity_to_buy});
         }
         if bid < 0.0{
+            print_metadata(logcode);
             return Err(LockBuyError::NonPositiveBid {negative_bid: bid});
         }
         //3 skippata implementiamo multiple locks
         if self.lock_buy[index].last == MAXLOCK as i32{
+            print_metadata(logcode);
             return Err(LockBuyError::MaxAllowedLocksReached);
         }
         if (self.goods[index].get_qty() - self.locked_qty[index] -2.0) < quantity_to_buy{
+            print_metadata(logcode);
             return Err(LockBuyError::InsufficientGoodQuantityAvailable {requested_good_kind : kind_to_buy.clone(), requested_good_quantity : quantity_to_buy, available_good_quantity : self.goods[index].get_qty()})
         }
         let minimum_bid = self.get_buy_price(kind_to_buy.clone(),quantity_to_buy);
         match minimum_bid {
             Ok(minimum) => {
                 if minimum > bid {
+                    print_metadata(logcode);
                     return Err(LockBuyError::BidTooLow {requested_good_kind:kind_to_buy, requested_good_quantity:quantity_to_buy, low_bid:bid , lowest_acceptable_bid: minimum});
                 }
             }
@@ -278,23 +294,33 @@ impl Market for ZSE{
         //insert into Hashmap
         self.token_buy.insert(token.clone(), true);
 
+
+        println!("{} {} {} {}",kind_to_buy,quantity_to_buy,bid,trader_name);
+        //write into logfile
+        let logcode = format!("LOCK_BUY-{}-KIND_TO_BUY:{}-QUANTITY_TO_BUY:{}-BID:{}-TOKEN:{}",trader_name.clone(),kind_to_buy,quantity_to_buy,bid,token.clone());
+        print_metadata(logcode);
         Ok(token)
     }
 
     fn buy(&mut self, token: String, cash: &mut Good) -> Result<Good, BuyError> {
+        let logcode = format!("BUY-TOKEN:{}-ERROR",token.clone());
         if !self.token_buy.contains_key(&*token){
+            print_metadata(logcode);
             return Err(BuyError::UnrecognizedToken {unrecognized_token : token});
         }
         if self.token_buy.contains_key(&*token) && !self.token_buy[&token] {
+            print_metadata(logcode);
             return Err(BuyError::ExpiredToken {expired_token : token});
         }
         if cash.get_kind() != Gk::EUR{
+            print_metadata(logcode);
             return Err(BuyError::GoodKindNotDefault { non_default_good_kind : cash.get_kind()});
         }
         let (gk, pos) = self.get_kind_by_token(&token, Mode::Buy);
         let index= self.get_index_by_goodkind(&gk);
         let agreed_quantity = self.lock_buy[index].lock[pos].quantity;
         if cash.get_qty() < agreed_quantity{
+            print_metadata(logcode);
             return Err(BuyError::InsufficientGoodQuantity {contained_quantity : cash.get_qty() , pre_agreed_quantity: agreed_quantity})
         }
 
@@ -315,29 +341,31 @@ impl Market for ZSE{
             ret = self.goods[index].split(agreed_quantity);
         }
         self.locked_qty[index] -= agreed_quantity;
+
+        //write into logfile
+        let logcode = format!("BUY-TOKEN:{}-OK",token.clone());
+        print_metadata(logcode);
         Ok(ret.unwrap())
     }
 
     fn lock_sell(&mut self, kind_to_sell: GoodKind, quantity_to_sell: f32, offer: f32, trader_name: String) -> Result<String, LockSellError> {
+        let logcode = format!("LOCK_SELL-{}-KIND_TO_SELL:{}-QUANTITY_TO_SELL:{}-OFFER:{}-ERROR",trader_name.clone(),kind_to_sell,quantity_to_sell,offer);
         let index = self.get_index_by_goodkind(&kind_to_sell);
         if quantity_to_sell < 0.0{
+            print_metadata(logcode);
             return Err(LockSellError::NonPositiveQuantityToSell { negative_quantity_to_sell : quantity_to_sell});
         }
-
         if offer < 0.0{
+            print_metadata(logcode);
             return Err(LockSellError::NonPositiveOffer { negative_offer : offer});
         }
-
-        // useless code todo remove
-        //if self.get_lock_sell_token_by_goodkind(&kind_to_sell) != ("".to_string()) {
-        //    return Err(LockSellError::DefaultGoodAlreadyLocked { token : self.get_lock_sell_token_by_goodkind(&kind_to_sell)});
-        //}
-
         if self.lock_sell[index].last == MAXLOCK as i32{
+            print_metadata(logcode);
             return Err(LockSellError::MaxAllowedLocksReached);
         }
 
         if self.goods[0].get_qty() < offer{
+            print_metadata(logcode);
             return Err(LockSellError::InsufficientDefaultGoodQuantityAvailable { offered_good_kind: kind_to_sell, offered_good_quantity: quantity_to_sell, available_good_quantity: self.goods[0].get_qty()});
         }
 
@@ -345,6 +373,7 @@ impl Market for ZSE{
         match acceptable_offer {
             Ok(acceptable_offer) => {
                 if acceptable_offer < offer {
+                    print_metadata(logcode);
                     return Err(LockSellError::OfferTooHigh { offered_good_kind : kind_to_sell, offered_good_quantity : quantity_to_sell, high_offer : offer, highest_acceptable_offer : acceptable_offer});
                 }
             }
@@ -359,14 +388,20 @@ impl Market for ZSE{
         //Insert into Hashmap
         self.token_sell.insert(token.clone(), true);
 
+        //write into logfile
+        let logcode = format!("LOCK_SELL-{}-KIND_TO_SELL:{}-QUANTITY_TO_SELL:{}-OFFER:{}-TOKEN:{}",trader_name.clone(),kind_to_sell,quantity_to_sell,offer,token.clone());
+        print_metadata(logcode);
         Ok(token)
     }
 
     fn sell(&mut self, token: String, good: &mut Good) -> Result<Good, SellError> {
+        let logcode = format!("BUY-TOKEN:{}-ERROR",token.clone());
         if !self.token_sell.contains_key(&*token){
+            print_metadata(logcode);
             return Err(SellError::UnrecognizedToken {unrecognized_token : token});
         }
         if self.token_sell.contains_key(&*token) && !self.token_sell[&token] {
+            print_metadata(logcode);
             return Err(SellError::ExpiredToken {expired_token : token});
         }
 
@@ -376,10 +411,12 @@ impl Market for ZSE{
         let agreed_price = self.lock_sell[index].lock[pos].price;
 
         if good.get_kind() != gk {
+            print_metadata(logcode);
             return Err(SellError::WrongGoodKind {wrong_good_kind: good.get_kind(), pre_agreed_kind: gk});
         }
 
         if good.get_qty() < agreed_quantity{
+            print_metadata(logcode);
             return Err(SellError::InsufficientGoodQuantity {contained_quantity : good.get_qty() , pre_agreed_quantity: agreed_quantity})
         }
 
@@ -399,6 +436,10 @@ impl Market for ZSE{
         while ret.is_err() {
             ret = self.goods[0].split(agreed_price);
         }
+
+        //write into logfile
+        let logcode = format!("BUY-TOKEN:{}-OK",token.clone());
+        print_metadata(logcode);
 
         Ok(ret.unwrap())
     }
@@ -484,7 +525,7 @@ impl ZSE{
     }
 
     fn fluctuate(&self){
-        todo!()
+        {}
     }
 
     fn hash(&self,v1:&GoodKind,v2:f32,v3:f32,v4:&String) -> String{
@@ -533,32 +574,6 @@ impl ZSE{
                     self.lock_sell[i].lock[j].remove();
                 }
             }
-        }
-    }
-    /*
-    fn check_create_file(){
-        let mut file = OpenOptions::new()
-            .write(true)
-            .append(true)
-            .create(true)
-            .open("log_ZSE.txt");
-        match file{
-            Ok(file) => file,
-            Err(_) => panic!("Error opening / creating file"),
-        };
-    }
-    */
-    fn print_metadata(buffer:String){
-        let mut file = OpenOptions::new().append(true).open(PATH_LOG); //open
-        match file { //check errors
-            Ok(mut file) => {
-                let write = file.write_all(buffer.as_bytes()); //write into log
-                match write {
-                    Ok(_) => {} //whacky
-                    Err(_) => println!("Error writing to file"),
-                }
-            }
-            Err(_) => panic!("Error opening file"),
         }
     }
 
@@ -610,13 +625,41 @@ impl Lock {
     }
 }
 
+//LOGFILE STUFF
+fn init_file(){
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true) //clear file
+        .open(PATH_LOG);
+    match file{
+        Ok(file) => file,
+        Err(_) => panic!("Error opening / creating file"),
+    };
+}
+
+fn print_metadata(buffer:String){
+    let mut file = OpenOptions::new().append(true).open(PATH_LOG); //open
+    match file { //check errors
+        Ok(mut file) => {
+            let date = Local::now();
+            let atm = date.format("%Y:%m:%d:%H:%M:%S:%3f");
+            let s = format!("ZSE|{}|{}\n",atm,buffer);
+            let write = file.write_all(s.as_bytes()); //write into log
+            match write {
+                Ok(_) => {} //whacky
+                Err(_) => println!("Error writing to file"),
+            }
+        }
+        Err(_) => panic!("Error opening file"),
+    };
+}
 
 
-//TODO notifiable trait,
-// metadata --> In new and where I have to update the file
+//TODO take actions on others' event(?),
 // reset market(?)
 // fluctuate -> modify prices over time and quantity
 // get_buy price and sell price numbers
 // add on event in all functions
-// modify visibility of functions
+// modify visibility of functions and clear panics
 
