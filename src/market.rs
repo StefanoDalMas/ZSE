@@ -111,6 +111,7 @@ impl Notifiable for ZSE{
             },
             _ => {},
         };
+        self.reset();
         self.external = true;
     }
 }
@@ -731,7 +732,6 @@ fn print_metadata(buffer:String){
         Err(_) => panic!("Error opening file"),
     };
 }
-
 
 //TODO demand function(?) get price buy and sell
 // modify visibility of functions and clear panics
