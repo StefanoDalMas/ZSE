@@ -396,9 +396,9 @@ checksum = "c0edd1e5b14653f783770bce4a4dabb4a5108a5370a5f5d8cfe8710c361f6c8b"
 
 [[package]]
 name = "unitn_market_2022"
-version = "1.0.3"
+version = "1.0.7"
 source = "registry+git://advancedprogramming.disi.unitn.it/index"
-checksum = "c0546520f1ef24e986ab03d80530bc0206ba376d6ea81ef5b94a3e50539d7fa4"
+checksum = "7c743e9661ee1830f53a769f7e51291b1864680425d3549b5c4f74a23f9ff341"
 
 [[package]]
 name = "version_check"

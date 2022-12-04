@@ -415,7 +415,7 @@ impl Market for ZSE{
 
         if self.goods[0].get_qty() < offer{
             print_metadata(logcode);
-            return Err(LockSellError::InsufficientDefaultGoodQuantityAvailable { offered_good_kind: kind_to_sell, offered_good_quantity: quantity_to_sell, available_good_quantity: self.goods[0].get_qty()});
+            return Err(LockSellError::InsufficientDefaultGoodQuantityAvailable { offered_good_kind: kind_to_sell, offered_good_quantity: offer, available_good_quantity: self.goods[0].get_qty()});
         }
 
         let acceptable_offer = self.get_sell_price(kind_to_sell.clone(), quantity_to_sell);
