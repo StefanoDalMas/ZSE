@@ -471,10 +471,12 @@ impl Market for ZSE{
             return Err(SellError::InsufficientGoodQuantity {contained_quantity : good.get_qty() , pre_agreed_quantity: agreed_quantity})
         }
 
-        let _ = match good.split(agreed_quantity) {
-            Ok(profit) => self.goods[index].merge(profit),
-            Err(e) => panic!("Errore nella split: {:?}", e),
-        };
+        let mut profit= good.split(agreed_quantity);
+        while profit.is_err(){
+            profit= good.split(agreed_quantity);
+        }
+        self.goods[index].merge(profit.unwrap());
+
         //remove lock that was in place
         self.remove(token.clone(), index, pos, Mode::Sell);
         //return
@@ -618,14 +620,6 @@ impl ZSE{
             }
         }
     }
-
-    fn get_time(){
-        let date = Local::now();
-        let atm = date.format("%Y:%m:%d:%H:%M:%S:%3f");
-        println!("{}",atm);
-
-    }
-
 
     fn internal_conversion(&mut self){
         let mut max_good = self.goods[0].clone();
