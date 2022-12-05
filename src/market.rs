@@ -1,6 +1,6 @@
 extern crate chrono;
 
-use std::borrow::Borrow;
+use std::borrow::{Borrow, BorrowMut};
 use chrono::Local;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -34,6 +34,7 @@ pub struct ZSE {
     pub token_buy : HashMap<String,bool>,
     pub markets: Vec<Box<dyn Notifiable>>,
     pub external:bool,
+    pub conversion_timer:[[i32;4];4],
 }
 
 pub struct Lock {
@@ -85,10 +86,11 @@ impl Notifiable for ZSE{
                     //check how much it is bought for compared to internal prices and adjust
                     let diff = exchange - self.prices_buy[self.get_index_by_goodkind(&good)];
                     self.prices_buy[self.get_index_by_goodkind(&good)] += (diff * 0.8);
+                    self.internal_conversion();
                 }
                 //I adjust prices only if someone external bought
-                if self.external && (unit_price - (unit_price/(5.0*100.0))) < self.prices_buy[self.get_index_by_goodkind(&good)] {
-                    self.prices_buy[self.get_index_by_goodkind(&good)] = (unit_price - (unit_price/(5.0*100.0)));
+                if self.external && (unit_price - (unit_price*0.05)) < self.prices_buy[self.get_index_by_goodkind(&good)] {
+                    self.prices_buy[self.get_index_by_goodkind(&good)] = (unit_price - (unit_price*0.05));
                 }
             },
             EventKind::Sold => {
@@ -103,16 +105,17 @@ impl Notifiable for ZSE{
                     //check how much it is sold for compared to internal prices and adjust
                     let diff = self.prices_sell[self.get_index_by_goodkind(&good)] - exchange;
                     self.prices_sell[self.get_index_by_goodkind(&good)] -= (diff * 0.8);
+                    self.internal_conversion();
                 }
                 //modify my sell prices if someone sold
-                if self.external && (unit_price + (unit_price/(5.0*100.0))) > self.prices_buy[self.get_index_by_goodkind(&good)]{
-                    self.prices_sell[self.get_index_by_goodkind(&good)] = (price/qty + ((price/qty)/(5.0*100.0)));
+                if self.external && (unit_price + (unit_price*0.05)) > self.prices_buy[self.get_index_by_goodkind(&good)] {
+                    self.prices_sell[self.get_index_by_goodkind(&good)] = unit_price + (unit_price*0.05);
                 }
             },
             _ => {},
         };
-        self.reset();
         self.external = true;
+        self.decrement_conversion_timer();
     }
 }
 
@@ -157,6 +160,7 @@ impl Market for ZSE{
             token_buy : HashMap::new(),
             markets: Vec::new(),
             external:true,
+            conversion_timer:[[0;4];4],
 
         };
         init_file();
@@ -197,6 +201,7 @@ impl Market for ZSE{
             token_buy : HashMap::new(),
             markets: Vec::new(),
             external:true,
+            conversion_timer:[[0;4];4],
         };
         init_file();
         //Create buffer
@@ -258,10 +263,10 @@ impl Market for ZSE{
         if internal_quantity < quantity{
             return Err(MarketGetterError::InsufficientGoodQuantityAvailable { requested_good_kind: kind, requested_good_quantity: quantity, available_good_quantity: internal_quantity});
         }
-        let discount = quantity/self.get_quantity_by_goodkind(&kind) * 10.0; //10% off is max discount
+        //let discount = quantity/self.get_quantity_by_goodkind(&kind) * 10.0; //10% off is max discount
         let price = self.get_price_buy_by_goodkind(&kind);
 
-        Ok(price - price*discount/100.0)
+        Ok(price) //todo check discount
     }
 
     fn get_sell_price(&self, kind: GoodKind, quantity: f32) -> Result<f32, MarketGetterError> {
@@ -270,7 +275,7 @@ impl Market for ZSE{
         }
         let x = self.get_price_sell_by_goodkind(&kind);
 
-        return Ok((x+x*0.02)*quantity);
+        Ok(x*quantity) //todo check demand fn
     }
 
     fn get_goods(&self) -> Vec<GoodLabel> {
@@ -312,15 +317,10 @@ impl Market for ZSE{
             print_metadata(logcode);
             return Err(LockBuyError::InsufficientGoodQuantityAvailable {requested_good_kind : kind_to_buy.clone(), requested_good_quantity : quantity_to_buy, available_good_quantity : self.goods[index].get_qty()})
         }
-        let minimum_bid = self.get_buy_price(kind_to_buy.clone(),quantity_to_buy);
-        match minimum_bid {
-            Ok(minimum) => {
-                if minimum > bid {
-                    print_metadata(logcode);
-                    return Err(LockBuyError::BidTooLow {requested_good_kind:kind_to_buy, requested_good_quantity:quantity_to_buy, low_bid:bid , lowest_acceptable_bid: minimum});
-                }
-            }
-            Err(e) => { panic!("Errore generazione minima offerta accettabile in acquisto") }
+        let minimum_bid = self.get_buy_price(kind_to_buy.clone(),quantity_to_buy).unwrap();
+        if minimum_bid > bid {
+            print_metadata(logcode);
+            return Err(LockBuyError::BidTooLow {requested_good_kind:kind_to_buy, requested_good_quantity:quantity_to_buy, low_bid:bid , lowest_acceptable_bid: minimum_bid});
         }
 
         let token = self.hash(&kind_to_buy,quantity_to_buy,bid,&trader_name);
@@ -335,7 +335,6 @@ impl Market for ZSE{
         self.token_buy.insert(token.clone(), true);
 
 
-        println!("{} {} {} {}",kind_to_buy,quantity_to_buy,bid,trader_name);
         //write into logfile
         let logcode = format!("LOCK_BUY-{}-KIND_TO_BUY:{}-QUANTITY_TO_BUY:{}-BID:{}-TOKEN:{}",trader_name.clone(),kind_to_buy,quantity_to_buy,bid,token.clone());
         print_metadata(logcode);
@@ -373,10 +372,12 @@ impl Market for ZSE{
         }
 
         //buy good
-        let _ = match cash.split(agreed_price) {
-            Ok(profit) => self.goods[0].merge(profit),
-            Err(e) => panic!("Errore nella split: {:?}", e),
-        };
+        let mut profit = cash.split(agreed_quantity);
+        while profit.is_err(){
+            profit = cash.split(agreed_quantity);
+        }
+        self.goods[0].merge(profit.unwrap());
+
         //remove lock that was in place
         self.remove(token.clone(),index, pos, Mode::Buy);
         //return
@@ -418,15 +419,10 @@ impl Market for ZSE{
             return Err(LockSellError::InsufficientDefaultGoodQuantityAvailable { offered_good_kind: kind_to_sell, offered_good_quantity: offer, available_good_quantity: self.goods[0].get_qty()});
         }
 
-        let acceptable_offer = self.get_sell_price(kind_to_sell.clone(), quantity_to_sell);
-        match acceptable_offer {
-            Ok(acceptable_offer) => {
-                if acceptable_offer < offer {
-                    print_metadata(logcode);
-                    return Err(LockSellError::OfferTooHigh { offered_good_kind : kind_to_sell, offered_good_quantity : quantity_to_sell, high_offer : offer, highest_acceptable_offer : acceptable_offer});
-                }
-            }
-            Err(e) => { panic!("Errore generazione massima offerta accettabile in vendita") }
+        let acceptable_offer = self.get_sell_price(kind_to_sell.clone(), quantity_to_sell).unwrap();
+        if acceptable_offer < offer {
+            print_metadata(logcode);
+            return Err(LockSellError::OfferTooHigh { offered_good_kind : kind_to_sell, offered_good_quantity : quantity_to_sell, high_offer : offer, highest_acceptable_offer : acceptable_offer});
         }
 
         let token = self.hash(&kind_to_sell,quantity_to_sell,offer,&trader_name);
@@ -631,36 +627,53 @@ impl ZSE{
     }
 
 
-    fn reset(&mut self){
-        if self.get_budget() < 100000.0 || self.get_budget() > 1900000.0{
-            let mut remaining =  STARTING_CAPITAL;
-            //create random float number
-            let mut tmp = vec![0.0;4];
-            let mut rng = rand::thread_rng();
-            let mut random_float;
-            for i in 0..3{
-                random_float = rng.gen_range(0.0..remaining);
-                tmp[i] = random_float;
-                if self.get_budget() < 100000.0{
-                    tmp[i] += self.goods[i].get_qty();
-                }
-                else if self.get_budget() > 1900000.0{
-                    tmp[i] -= self.goods[i].get_qty();
-                    if tmp[i] < 0.0 {
-                        tmp[i] = random_float;
-                    }
-                }
-                remaining -= random_float;
+    fn internal_conversion(&mut self){
+        let mut max_good = self.goods[0].clone();
+        let mut min_good = self.goods[0].clone();
+        for g in &self.goods{
+            if g.get_qty() > max_good.get_qty(){
+                max_good = g.clone();
             }
-            //insert new budget into market
-            self.goods = [
-                Good::new(Gk::EUR, tmp[0]),
-                Good::new(Gk::USD, tmp[1]*DEFAULT_EUR_USD_EXCHANGE_RATE),
-                Good::new(Gk::YEN, tmp[2]*DEFAULT_EUR_YEN_EXCHANGE_RATE),
-                Good::new(Gk::YUAN, tmp[3]*DEFAULT_EUR_YUAN_EXCHANGE_RATE),
-            ]
+            if g.get_qty() < min_good.get_qty(){
+                min_good = g.clone();
+            }
+        }
+        if min_good.get_qty() < 14000.0 && max_good.get_kind() != min_good.get_kind() {
+            if self.conversion_timer[self.get_index_by_goodkind(&max_good.get_kind())][self.get_index_by_goodkind(&min_good.get_kind())] == 0{
+                let conversion_rate_from = match max_good.get_kind() {
+                    Gk::EUR => 1.0,
+                    Gk::USD => DEFAULT_EUR_USD_EXCHANGE_RATE,
+                    Gk::YEN => DEFAULT_EUR_YEN_EXCHANGE_RATE,
+                    Gk::YUAN => DEFAULT_EUR_YUAN_EXCHANGE_RATE,
+                };
+                let conversion_rate_to = match max_good.get_kind() {
+                    Gk::EUR => 1.0,
+                    Gk::USD => DEFAULT_EUR_USD_EXCHANGE_RATE,
+                    Gk::YEN => DEFAULT_EUR_YEN_EXCHANGE_RATE,
+                    Gk::YUAN => DEFAULT_EUR_YUAN_EXCHANGE_RATE,
+                };
+
+                let random_number = rand::thread_rng().gen_range(20..30);
+                let value_to_convert = max_good.get_qty() * random_number as f32 / 100.0;
+                self.goods[self.get_index_by_goodkind(&max_good.get_kind())].split(value_to_convert);
+                let new_good = Good::new(min_good.get_kind(),value_to_convert*conversion_rate_to/conversion_rate_from);
+                self.goods[self.get_index_by_goodkind(&min_good.get_kind())].merge(new_good);
+                // set as used
+                self.conversion_timer[self.get_index_by_goodkind(&max_good.get_kind())][self.get_index_by_goodkind(&min_good.get_kind())] = 100;
+            }
         }
     }
+
+    fn decrement_conversion_timer(&mut self){
+        for i in 0..4{
+            for j in 0..4{
+                if self.conversion_timer[i][j] > 0{
+                    self.conversion_timer[i][j] -= 1;
+                }
+            }
+        }
+    }
+
 }
 
 

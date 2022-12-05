@@ -56,7 +56,7 @@ mod test{
     fn maxAllowedLocksReached(){
         let mut market = init();
         let max_locks = init_lock();
-        let mut token;
+        /*let mut token;
 
         for _ in 0..max_locks {
             token = market.borrow_mut().lock_sell(Gk::EUR, 100.0, 1.0, "test".to_string());
@@ -67,6 +67,22 @@ mod test{
         }
 
         token = market.borrow_mut().lock_sell(Gk::EUR, 100.0, 1.0, "test".to_string());
+        assert_eq!(token, Err(LSE::MaxAllowedLocksReached));*/
+
+        /*let name = market.borrow().get_name().to_string();
+        let mut token = market.borrow_mut().lock_sell(Gk::EUR, 100.0, 1.0, name.clone());
+        while !token.is_err(){
+            token = market.borrow_mut().lock_sell(Gk::EUR, 100.0, 1.0, name.clone());
+        }
+        assert_eq!(token, Err(LSE::MaxAllowedLocksReached));
+
+         */
+        let name = market.borrow().get_name().to_string();
+        let mut token=market.borrow_mut().lock_sell(Gk::EUR, 100.0, 1.0, name.clone());
+        for _ in 0..max_locks{
+            token = market.borrow_mut().lock_sell(Gk::EUR, 100.0, 1.0, name.clone());
+
+        }
         assert_eq!(token, Err(LSE::MaxAllowedLocksReached));
     }
 
@@ -75,10 +91,15 @@ mod test{
         let mut market = init();
         let goods = market.borrow_mut().get_goods();
         let good = Good::new(Gk::USD, 1000.0);
-        let available = goods[0].quantity;
+        let mut available= 0.0;
+        for g in goods{
+            if g.good_kind == Gk::EUR{
+                available = g.quantity;
+            }
+        }
 
         let token = market.borrow_mut().lock_sell(good.get_kind(), good.get_qty(),1000000.0, "test".to_string());
-        assert_eq!(token, Err(LSE::InsufficientDefaultGoodQuantityAvailable {offered_good_kind:good.get_kind(), offered_good_quantity:good.get_qty(), available_good_quantity: available}));
+        assert_eq!(token, Err(LSE::InsufficientDefaultGoodQuantityAvailable {offered_good_kind:good.get_kind(), offered_good_quantity:1000000.0, available_good_quantity: available}));
     }
 
     #[test]
