@@ -23,34 +23,34 @@ use sha256::digest;
 use unitn_market_2022::good::good_error::GoodSplitError;
 
 pub struct ZSE {
-    pub name: String,
-    pub goods: [Good; 4],
-    pub prices_sell: [f32; 4],
-    pub prices_buy: [f32; 4],
-    pub lock_buy: [Lock; 4],
-    pub lock_sell: [Lock; 4],
-    pub locked_qty: [f32; 4],
-    pub token_sell: HashMap<String, bool>,
-    pub token_buy : HashMap<String,bool>,
-    pub markets: Vec<Box<dyn Notifiable>>,
-    pub external:bool,
-    pub conversion_timer:[[i32;4];4],
+     name: String,
+     goods: [Good; 4],
+     prices_sell: [f32; 4],
+     prices_buy: [f32; 4],
+     lock_buy: [Lock; 4],
+     lock_sell: [Lock; 4],
+     locked_qty: [f32; 4],
+     token_sell: HashMap<String, bool>,
+     token_buy : HashMap<String,bool>,
+     markets: Vec<Box<dyn Notifiable>>,
+     external:bool,
+     conversion_timer:[[i32;4];4],
 }
 
-pub struct Lock {
-    pub lock: [Contract; MAXLOCK],
-    pub last: i32,
+struct Lock {
+     lock: [Contract; MAXLOCK],
+     last: i32,
 }
 
-pub struct Contract {
-    pub token: String,
-    pub quantity: f32,
-    pub price: f32,
-    pub lock_counter:i32,
+struct Contract {
+     token: String,
+     quantity: f32,
+     price: f32,
+     lock_counter:i32,
 }
 
 #[derive(Copy, Clone)]
-pub enum Mode {
+enum Mode {
     Buy,
     Sell,
 }
@@ -268,7 +268,7 @@ impl Market for ZSE{
         //let discount = quantity/self.get_quantity_by_goodkind(&kind) * 10.0; //10% off is max discount
         let price = self.get_price_buy_by_goodkind(&kind);
 
-        Ok(price) //todo check discount
+        Ok(price)
     }
 
     fn get_sell_price(&self, kind: GoodKind, quantity: f32) -> Result<f32, MarketGetterError> {
@@ -277,7 +277,7 @@ impl Market for ZSE{
         }
         let x = self.get_price_sell_by_goodkind(&kind);
 
-        Ok(x*quantity) //todo check demand fn
+        Ok(x*quantity)
     }
 
     fn get_goods(&self) -> Vec<GoodLabel> {
@@ -732,7 +732,7 @@ fn print_metadata(buffer:String){
             let s = format!("ZSE|{}|{}\n",atm,buffer);
             let write = file.write_all(s.as_bytes()); //write into log
             match write {
-                Ok(_) => {} //whacky
+                Ok(_) => {}
                 Err(_) => println!("Error writing to file"),
             }
         }
@@ -740,6 +740,4 @@ fn print_metadata(buffer:String){
     };
 }
 
-//TODO demand function(?) get price buy and sell
-// modify visibility of functions and clear panics
 

@@ -323,6 +323,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c8132065adcfd6e02db789d9285a0deb2f3fcb04002865ab67d5fb103533898"
 
 [[package]]
+name = "serde"
+version = "1.0.149"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "256b9932320c590e707b94576e3cc1f7c9024d0ee6612dfbcf1cb106cbe8e055"
+dependencies = [
+ "serde_derive",
+]
+
+[[package]]
+name = "serde_derive"
+version = "1.0.149"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4eae9b04cbffdfd550eb462ed33bc6a1b68c935127d008b27444d08380f94e4"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "sha2"
 version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -396,9 +416,12 @@ checksum = "c0edd1e5b14653f783770bce4a4dabb4a5108a5370a5f5d8cfe8710c361f6c8b"
 
 [[package]]
 name = "unitn_market_2022"
-version = "1.0.7"
+version = "1.0.10"
 source = "registry+git://advancedprogramming.disi.unitn.it/index"
-checksum = "7c743e9661ee1830f53a769f7e51291b1864680425d3549b5c4f74a23f9ff341"
+checksum = "e075712c8a59b893667fbe6d4452b7785c98f0cf309531feb4eeaae9181f2b8f"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "version_check"
