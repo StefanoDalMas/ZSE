@@ -55,7 +55,9 @@ mod test{
     #[test]
     fn maxAllowedLocksReached(){
         let mut market = init();
-        let max_locks = init_lock();
+        //let max_locks = init_lock();
+        //let max_locks :U ;
+
         /*let mut token;
 
         for _ in 0..max_locks {
@@ -68,22 +70,22 @@ mod test{
 
         token = market.borrow_mut().lock_sell(Gk::EUR, 100.0, 1.0, "test".to_string());
         assert_eq!(token, Err(LSE::MaxAllowedLocksReached));*/
-
-        /*let name = market.borrow().get_name().to_string();
+        let mut count = 0;
+        let name = market.borrow().get_name().to_string();
         let mut token = market.borrow_mut().lock_sell(Gk::EUR, 100.0, 1.0, name.clone());
-        while !token.is_err(){
+        while token.is_ok() || count<100{
             token = market.borrow_mut().lock_sell(Gk::EUR, 100.0, 1.0, name.clone());
+            count+=1;
         }
         assert_eq!(token, Err(LSE::MaxAllowedLocksReached));
 
-         */
+        /*
         let name = market.borrow().get_name().to_string();
         let mut token=market.borrow_mut().lock_sell(Gk::EUR, 100.0, 1.0, name.clone());
         for _ in 0..max_locks{
             token = market.borrow_mut().lock_sell(Gk::EUR, 100.0, 1.0, name.clone());
-
         }
-        assert_eq!(token, Err(LSE::MaxAllowedLocksReached));
+        assert_eq!(token, Err(LSE::MaxAllowedLocksReached));*/
     }
 
     #[test]
