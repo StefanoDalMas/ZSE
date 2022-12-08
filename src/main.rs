@@ -20,6 +20,7 @@ fn main() {
     println!("Henlo");
     let mut market = market::ZSE::new_random();
     println!("{}", market.borrow().get_budget());
+    println!("{:?}", market.borrow().get_goods());
     let x = market.borrow_mut().lock_buy(unitn_market_2022::good::good_kind::GoodKind::USD,5.0,7.0,"test".to_string());
     let _ = market.borrow_mut().buy(x.unwrap(), &mut unitn_market_2022::good::good::Good::new(unitn_market_2022::good::good_kind::GoodKind::EUR, 50000.0));
     println!("{}", market.borrow().get_budget());

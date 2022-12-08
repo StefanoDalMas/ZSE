@@ -55,6 +55,9 @@ impl Notifiable for ZSE {
         use unitn_market_2022::event::event::EventKind;
 
         self.increment_lock_counter_and_reset();
+        for m in &mut self.markets {
+            m.on_event(event.clone());
+        }
 
         let unit_price = event.price / event.quantity;
         let index = self.get_index_by_goodkind(&event.good_kind);
@@ -101,16 +104,17 @@ impl Market for ZSE {
         use rand::Rng;
 
         let mut remaining = STARTING_CAPITAL;
-        //create random float number
         let mut tmp = vec![0.0; 4];
         let mut rng = rand::thread_rng();
         let mut random_float;
+
         for i in 0..3 {
             random_float = rng.gen_range(0.0..remaining);
             tmp[i] = random_float;
             remaining -= random_float;
         }
         tmp[3] = remaining;
+
         let market = ZSE {
             goods: [
                 Good::new(GoodKind::EUR, tmp[0]),
@@ -130,7 +134,6 @@ impl Market for ZSE {
                 DEFAULT_EUR_YEN_EXCHANGE_RATE,
                 DEFAULT_EUR_YUAN_EXCHANGE_RATE,
             ],
-            //initialize lock_buy with all empty string
             lock_buy: [Lock::new(), Lock::new(), Lock::new(), Lock::new()],
             lock_sell: [Lock::new(), Lock::new(), Lock::new(), Lock::new()],
             locked_qty: [0.0; 4],
@@ -139,8 +142,8 @@ impl Market for ZSE {
             markets: Vec::new(),
             external: true,
             conversion_timer: [[0; 4]; 4],
-
         };
+
         init_file();
         let logcode = format!(
             "MARKET INITIALIZATION \n EUR: {:+e} \n USD: {:+e} \n YEN: {:+e} \n YUAN: {:+e} \n END MARKET INITIALIZATION",
@@ -179,6 +182,7 @@ impl Market for ZSE {
             external: true,
             conversion_timer: [[0; 4]; 4],
         };
+
         init_file();
         let logcode = format!(
             "MARKET INITIALIZATION \n EUR: {:+e} \n USD: {:+e} \n YEN: {:+e} \n YUAN: {:+e} \n END MARKET INITIALIZATION",
@@ -218,13 +222,14 @@ impl Market for ZSE {
                 _ => {}
             }
         }
+
         init_file();
-        //create buffer
         let logcode = format!(
             "MARKET INITIALIZATION \n EUR: {:+e} \n USD: {:+e} \n YEN: {:+e} \n YUAN: {:+e} \n END MARKET INITIALIZATION",
             eur, usd, yen, yuan
         );
         print_metadata(logcode);
+
         Self::new_with_quantities(eur, yen, usd, yuan)
     }
 
@@ -240,13 +245,13 @@ impl Market for ZSE {
         if quantity < 0.0 {
             return Err(MarketGetterError::NonPositiveQuantityAsked);
         }
-        let internal_quantity = self.get_quantity_by_goodkind(&kind);
-        if internal_quantity < quantity {
+
+        let internal_quantity = self.goods[self.get_index_by_goodkind(&kind)].get_qty();
+        if  internal_quantity < quantity {
             return Err(MarketGetterError::InsufficientGoodQuantityAvailable { requested_good_kind: kind, requested_good_quantity: quantity, available_good_quantity: internal_quantity });
         }
-        //let discount = quantity/self.get_quantity_by_goodkind(&kind) * 10.0; //10% off is max discount
-        let price = self.get_price_buy_by_goodkind(&kind);
 
+        let price = self.prices_buy[self.get_index_by_goodkind(&kind)];
         Ok(price * quantity)
     }
 
@@ -254,28 +259,32 @@ impl Market for ZSE {
         if quantity < 0.0 {
             return Err(MarketGetterError::NonPositiveQuantityAsked);
         }
-        let price = self.get_price_sell_by_goodkind(&kind);
 
+        let price = self.prices_sell[self.get_index_by_goodkind(&kind)];
         Ok(price * quantity)
     }
 
     fn get_goods(&self) -> Vec<GoodLabel> {
         let mut goods = Vec::new();
+        let mut index = 0;
+
         for good in self.goods.iter() {
+            index = self.get_index_by_goodkind(&good.get_kind());
             let label = GoodLabel {
                 good_kind: good.get_kind(),
                 quantity: good.get_qty(),
-                exchange_rate_buy: self.get_price_buy_by_goodkind(&good.get_kind()),
-                exchange_rate_sell: self.get_price_sell_by_goodkind(&good.get_kind()),
+                exchange_rate_buy: self.prices_buy[index],
+                exchange_rate_sell: self.prices_sell[index],
             };
             goods.push(label);
         }
+
         goods
     }
 
     fn lock_buy(&mut self, kind_to_buy: GoodKind, quantity_to_buy: f32, bid: f32, trader_name: String) -> Result<String, LockBuyError> {
         use unitn_market_2022::event::event::EventKind;
-        //call event
+
         self.external = false;
         self.on_event(Event { kind: EventKind::LockedBuy, quantity: quantity_to_buy, price: bid, good_kind: kind_to_buy });
 
@@ -491,33 +500,6 @@ impl ZSE {
         }
     }
 
-    fn get_quantity_by_goodkind(&self, kind: &GoodKind) -> f32 {
-        for good in self.goods.iter() {
-            if good.get_kind() == *kind {
-                return good.get_qty();
-            }
-        }
-        0.0
-    }
-
-    fn get_price_sell_by_goodkind(&self, kind: &GoodKind) -> f32 {
-        for i in 0..self.goods.len() {
-            if self.goods[i].get_kind() == *kind {
-                return self.prices_sell[i];
-            }
-        }
-        0.0
-    }
-
-    fn get_price_buy_by_goodkind(&self, kind: &GoodKind) -> f32 {
-        for i in 0..self.goods.len() {
-            if self.goods[i].get_kind() == *kind {
-                return self.prices_buy[i];
-            }
-        }
-        0.0
-    }
-
     fn get_index_by_goodkind(&self, kind: &GoodKind) -> usize {
         for i in 0..self.goods.len() {
             if self.goods[i].get_kind() == *kind {
@@ -591,14 +573,12 @@ impl ZSE {
     fn increment_lock_counter_and_reset(&mut self) {
         for i in 0..4 {
             for j in 0..MAXLOCK {
-                //increment counter
                 if self.lock_buy[i].lock[j].token != "".to_string() {
                     self.lock_buy[i].lock[j].lock_counter += 1;
                 }
                 if self.lock_sell[i].lock[j].token != "".to_string() {
                     self.lock_sell[i].lock[j].lock_counter += 1;
                 }
-                //If maximum is reached, remove it
                 if self.lock_buy[i].lock[j].lock_counter >= MAXTIME {
                     self.token_buy.insert(self.lock_buy[i].lock[j].token.clone(), false);
                     self.lock_buy[i].lock[j].remove();
@@ -644,7 +624,7 @@ impl ZSE {
                 let _ = self.goods[self.get_index_by_goodkind(&max_good.get_kind())].split(value_to_convert);
                 let new_good = Good::new(min_good.get_kind(), value_to_convert * conversion_rate_to / conversion_rate_from);
                 let _ = self.goods[self.get_index_by_goodkind(&min_good.get_kind())].merge(new_good);
-                // set as used
+
                 self.conversion_timer[self.get_index_by_goodkind(&max_good.get_kind())][self.get_index_by_goodkind(&min_good.get_kind())] = 100;
             }
         }
@@ -700,14 +680,13 @@ impl Lock {
     }
 }
 
-//LOGFILE STUFF
 fn init_file() {
     use std::fs::OpenOptions;
 
     let file = OpenOptions::new()
         .write(true)
         .create(true)
-        .truncate(true) //clear file
+        .truncate(true)
         .open(PATH_LOG);
     match file {
         Ok(file) => file,
@@ -721,12 +700,12 @@ fn print_metadata(buffer: String) {
     use chrono::Local;
 
     let file = OpenOptions::new().append(true).open(PATH_LOG); //open
-    match file { //check errors
+    match file {
         Ok(mut file) => {
             let date = Local::now();
             let atm = date.format("%Y:%m:%d:%H:%M:%S:%3f");
             let s = format!("ZSE|{}|{}\n", atm, buffer);
-            let write = file.write_all(s.as_bytes()); //write into log
+            let write = file.write_all(s.as_bytes());
             match write {
                 Ok(_) => {}
                 Err(_) => println!("Error writing to file"),
@@ -735,5 +714,3 @@ fn print_metadata(buffer: String) {
         Err(_) => panic!("Error opening file"),
     };
 }
-
-
