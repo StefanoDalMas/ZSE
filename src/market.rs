@@ -351,12 +351,13 @@ impl Market for ZSE {
 
         self.remove_lock(token.clone(), index, pos, Mode::Buy);
 
-        let ret = self.goods[index].split(agreed_quantity);
+        let ret = self.goods[index].split(agreed_quantity).unwrap();
         self.locked_qty[index] -= agreed_quantity;
 
         let logcode = format!("BUY-TOKEN:{}-OK", token.clone());
         print_metadata(logcode);
-        Ok(ret.unwrap())
+
+        Ok(ret)
     }
 
     fn lock_sell(&mut self, kind_to_sell: GoodKind, quantity_to_sell: f32, offer: f32, trader_name: String) -> Result<String, LockSellError> {
@@ -405,7 +406,6 @@ impl Market for ZSE {
     }
 
     fn sell(&mut self, token: String, good: &mut Good) -> Result<Good, SellError> {
-        use unitn_market_2022::good::good_error::GoodSplitError;
         use unitn_market_2022::event::event::EventKind;
 
         let (gk, pos) = self.get_kind_by_token(&token, Mode::Sell);
@@ -435,18 +435,18 @@ impl Market for ZSE {
             return Err(SellError::InsufficientGoodQuantity { contained_quantity: good.get_qty(), pre_agreed_quantity: agreed_quantity });
         }
 
-        let mut profit = good.split(agreed_quantity);
+        let profit = good.split(agreed_quantity);
         let _ = self.goods[index].merge(profit.unwrap());
 
         self.remove_lock(token.clone(), index, pos, Mode::Sell);
 
-        let ret = self.goods[0].split(agreed_price);
+        let ret = self.goods[0].split(agreed_price).unwrap();
         self.locked_qty[0] -= agreed_price;
 
         let logcode = format!("BUY-TOKEN:{}-OK", token.clone());
         print_metadata(logcode);
 
-        Ok(ret.unwrap())
+        Ok(ret)
     }
 }
 
