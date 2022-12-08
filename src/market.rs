@@ -72,7 +72,6 @@ impl Notifiable for ZSE {
         match event.kind {
             EventKind::Bought => {
                 if !self.external {
-                    //check how much it is bought for compared to internal prices and adjust
                     let diff = exchange - self.prices_buy[index];
                     self.prices_buy[index] += diff * 0.8;
                     self.internal_conversion();
@@ -83,7 +82,6 @@ impl Notifiable for ZSE {
             }
             EventKind::Sold => {
                 if !self.external {
-                    //check how much it is sold for compared to internal prices and adjust
                     let diff = self.prices_sell[index] - exchange;
                     self.prices_sell[index] -= diff * 0.8;
                     self.internal_conversion();
@@ -103,17 +101,16 @@ impl Market for ZSE {
     fn new_random() -> Rc<RefCell<dyn Market>> where Self: Sized {
         use rand::Rng;
 
-        let mut remaining = STARTING_CAPITAL;
+        let mut remaining = STARTING_CAPITAL as i32;
         let mut tmp = vec![0.0; 4];
-        let mut rng = rand::thread_rng();
-        let mut random_float;
+        let mut random_num;
 
         for i in 0..3 {
-            random_float = rng.gen_range(0.0..remaining);
-            tmp[i] = random_float;
-            remaining -= random_float;
+            random_num = rand::thread_rng().gen_range(0..remaining);
+            tmp[i] = random_num as f32;
+            remaining -= random_num;
         }
-        tmp[3] = remaining;
+        tmp[3] = remaining as f32;
 
         let market = ZSE {
             goods: [
@@ -206,7 +203,7 @@ impl Market for ZSE {
         let mut usd = 0.0;
         let mut yen = 0.0;
         let mut yuan = 0.0;
-        //create BufferedReader
+
         let reader = std::io::BufReader::new(file.unwrap());
         for line in reader.lines() {
             let line = line.unwrap();
@@ -222,13 +219,6 @@ impl Market for ZSE {
                 _ => {}
             }
         }
-
-        init_file();
-        let logcode = format!(
-            "MARKET INITIALIZATION \n EUR: {:+e} \n USD: {:+e} \n YEN: {:+e} \n YUAN: {:+e} \n END MARKET INITIALIZATION",
-            eur, usd, yen, yuan
-        );
-        print_metadata(logcode);
 
         Self::new_with_quantities(eur, yen, usd, yuan)
     }
@@ -266,7 +256,7 @@ impl Market for ZSE {
 
     fn get_goods(&self) -> Vec<GoodLabel> {
         let mut goods = Vec::new();
-        let mut index = 0;
+        let mut index;
 
         for good in self.goods.iter() {
             index = self.get_index_by_goodkind(&good.get_kind());
@@ -289,9 +279,9 @@ impl Market for ZSE {
         self.on_event(Event { kind: EventKind::LockedBuy, quantity: quantity_to_buy, price: bid, good_kind: kind_to_buy });
 
         let logcode = format!("LOCK_BUY-{}-KIND_TO_BUY:{}-QUANTITY_TO_BUY:{}-BID:{}-ERROR", trader_name.clone(), kind_to_buy, quantity_to_buy, bid);
-
-        //check errors
         let index = self.get_index_by_goodkind(&kind_to_buy);
+        let minimum_bid = self.get_buy_price(kind_to_buy.clone(), quantity_to_buy).unwrap();
+
         if quantity_to_buy < 0.0 {
             print_metadata(logcode);
             return Err(LockBuyError::NonPositiveQuantityToBuy { negative_quantity_to_buy: quantity_to_buy });
@@ -300,16 +290,14 @@ impl Market for ZSE {
             print_metadata(logcode);
             return Err(LockBuyError::NonPositiveBid { negative_bid: bid });
         }
-        //we implement multiple locks -> 3° check is unnecessary
         if self.lock_buy[index].last == MAXLOCK as i32 {
             print_metadata(logcode);
             return Err(LockBuyError::MaxAllowedLocksReached);
         }
-        if (self.goods[index].get_qty() - self.locked_qty[index] - 2.0) < quantity_to_buy {
+        if (self.goods[index].get_qty() - self.locked_qty[index]) < quantity_to_buy {
             print_metadata(logcode);
-            return Err(LockBuyError::InsufficientGoodQuantityAvailable { requested_good_kind: kind_to_buy.clone(), requested_good_quantity: quantity_to_buy, available_good_quantity: self.goods[index].get_qty() });
+            return Err(LockBuyError::InsufficientGoodQuantityAvailable { requested_good_kind: kind_to_buy.clone(), requested_good_quantity: quantity_to_buy, available_good_quantity: (self.goods[index].get_qty() - self.locked_qty[index]) });
         }
-        let minimum_bid = self.get_buy_price(kind_to_buy.clone(), quantity_to_buy).unwrap();
         if minimum_bid > bid {
             print_metadata(logcode);
             return Err(LockBuyError::BidTooLow { requested_good_kind: kind_to_buy, requested_good_quantity: quantity_to_buy, low_bid: bid, lowest_acceptable_bid: minimum_bid });
@@ -317,15 +305,12 @@ impl Market for ZSE {
 
         let token = self.hash(&kind_to_buy, quantity_to_buy, bid, &trader_name);
 
-        //Update lock
         self.lock_buy[index].insert(&token, quantity_to_buy, bid);
         self.lock_buy[index].last += 1;
         self.locked_qty[index] += quantity_to_buy;
 
-        //insert into Hashmap
         self.token_buy.insert(token.clone(), true);
 
-        //write into logfile
         let logcode = format!("LOCK_BUY-{}-KIND_TO_BUY:{}-QUANTITY_TO_BUY:{}-BID:{}-TOKEN:{}", trader_name.clone(), kind_to_buy, quantity_to_buy, bid, token.clone());
         print_metadata(logcode);
 
@@ -333,19 +318,16 @@ impl Market for ZSE {
     }
 
     fn buy(&mut self, token: String, cash: &mut Good) -> Result<Good, BuyError> {
-        use unitn_market_2022::good::good_error::GoodSplitError;
         use unitn_market_2022::event::event::EventKind;
-        //variables needed
+
         let (gk, pos) = self.get_kind_by_token(&token, Mode::Buy);
         let index = self.get_index_by_goodkind(&gk);
         let agreed_quantity = self.lock_buy[index].lock[pos].quantity;
         let agreed_price = self.lock_buy[index].lock[pos].price;
+        let logcode = format!("BUY-TOKEN:{}-ERROR", token.clone());
 
-        //call event
         self.external = false;
         self.on_event(Event { kind: EventKind::Bought, quantity: agreed_quantity, price: agreed_price, good_kind: gk.clone() });
-
-        let logcode = format!("BUY-TOKEN:{}-ERROR", token.clone());
 
         if !self.token_buy.contains_key(&*token) {
             print_metadata(logcode);
@@ -364,24 +346,14 @@ impl Market for ZSE {
             return Err(BuyError::InsufficientGoodQuantity { contained_quantity: cash.get_qty(), pre_agreed_quantity: agreed_quantity });
         }
 
-        //buy good
-        let mut profit = cash.split(agreed_quantity);
-        while profit.is_err() {
-            profit = cash.split(agreed_quantity);
-        }
+        let profit = cash.split(agreed_price);
         let _ = self.goods[0].merge(profit.unwrap());
 
-        //remove lock that was in place
-        self.remove(token.clone(), index, pos, Mode::Buy);
+        self.remove_lock(token.clone(), index, pos, Mode::Buy);
 
-        //return
-        let mut ret = Err(GoodSplitError::NotEnoughQuantityToSplit);
-        while ret.is_err() {
-            ret = self.goods[index].split(agreed_quantity);
-        }
+        let ret = self.goods[index].split(agreed_quantity);
         self.locked_qty[index] -= agreed_quantity;
 
-        //write into logfile
         let logcode = format!("BUY-TOKEN:{}-OK", token.clone());
         print_metadata(logcode);
         Ok(ret.unwrap())
@@ -389,14 +361,14 @@ impl Market for ZSE {
 
     fn lock_sell(&mut self, kind_to_sell: GoodKind, quantity_to_sell: f32, offer: f32, trader_name: String) -> Result<String, LockSellError> {
         use unitn_market_2022::event::event::EventKind;
-        //call event
+
         self.external = false;
         self.on_event(Event { kind: EventKind::LockedSell, quantity: quantity_to_sell, price: offer, good_kind: kind_to_sell });
 
         let logcode = format!("LOCK_SELL-{}-KIND_TO_SELL:{}-QUANTITY_TO_SELL:{}-OFFER:{}-ERROR", trader_name.clone(), kind_to_sell, quantity_to_sell, offer);
-
-        //check errors
         let index = self.get_index_by_goodkind(&kind_to_sell);
+        let acceptable_offer = self.get_sell_price(kind_to_sell.clone(), quantity_to_sell).unwrap();
+
         if quantity_to_sell < 0.0 {
             print_metadata(logcode);
             return Err(LockSellError::NonPositiveQuantityToSell { negative_quantity_to_sell: quantity_to_sell });
@@ -413,7 +385,6 @@ impl Market for ZSE {
             print_metadata(logcode);
             return Err(LockSellError::InsufficientDefaultGoodQuantityAvailable { offered_good_kind: kind_to_sell, offered_good_quantity: offer, available_good_quantity: self.goods[0].get_qty() });
         }
-        let acceptable_offer = self.get_sell_price(kind_to_sell.clone(), quantity_to_sell).unwrap();
         if acceptable_offer < offer {
             print_metadata(logcode);
             return Err(LockSellError::OfferTooHigh { offered_good_kind: kind_to_sell, offered_good_quantity: quantity_to_sell, high_offer: offer, highest_acceptable_offer: acceptable_offer });
@@ -421,29 +392,27 @@ impl Market for ZSE {
 
         let token = self.hash(&kind_to_sell, quantity_to_sell, offer, &trader_name);
 
-        //Update lock
         self.lock_sell[index].insert(&token, quantity_to_sell, offer);
         self.lock_sell[index].last += 1;
+        self.locked_qty[0] += offer;
 
-        //Insert into Hashmap
         self.token_sell.insert(token.clone(), true);
 
-        //write into logfile
         let logcode = format!("LOCK_SELL-{}-KIND_TO_SELL:{}-QUANTITY_TO_SELL:{}-OFFER:{}-TOKEN:{}", trader_name.clone(), kind_to_sell, quantity_to_sell, offer, token.clone());
         print_metadata(logcode);
+
         Ok(token)
     }
 
     fn sell(&mut self, token: String, good: &mut Good) -> Result<Good, SellError> {
         use unitn_market_2022::good::good_error::GoodSplitError;
         use unitn_market_2022::event::event::EventKind;
-        //variables needed
+
         let (gk, pos) = self.get_kind_by_token(&token, Mode::Sell);
         let index = self.get_index_by_goodkind(&gk);
         let agreed_quantity = self.lock_sell[index].lock[pos].quantity;
         let agreed_price = self.lock_sell[index].lock[pos].price;
 
-        //call event
         self.external = false;
         self.on_event(Event { kind: EventKind::Sold, quantity: agreed_quantity, price: agreed_price, good_kind: good.get_kind() });
 
@@ -467,21 +436,13 @@ impl Market for ZSE {
         }
 
         let mut profit = good.split(agreed_quantity);
-        while profit.is_err() {
-            profit = good.split(agreed_quantity);
-        }
         let _ = self.goods[index].merge(profit.unwrap());
 
-        //remove lock that was in place
-        self.remove(token.clone(), index, pos, Mode::Sell);
+        self.remove_lock(token.clone(), index, pos, Mode::Sell);
 
-        //return
-        let mut ret = Err(GoodSplitError::NotEnoughQuantityToSplit);
-        while ret.is_err() {
-            ret = self.goods[0].split(agreed_price);
-        }
+        let ret = self.goods[0].split(agreed_price);
+        self.locked_qty[0] -= agreed_price;
 
-        //write into logfile
         let logcode = format!("BUY-TOKEN:{}-OK", token.clone());
         print_metadata(logcode);
 
@@ -501,44 +462,36 @@ impl ZSE {
     }
 
     fn get_index_by_goodkind(&self, kind: &GoodKind) -> usize {
-        for i in 0..self.goods.len() {
-            if self.goods[i].get_kind() == *kind {
-                return i;
-            }
-        }
-        0
+        return match *kind {
+            GoodKind::EUR => 0,
+            GoodKind::USD => 1,
+            GoodKind::YEN => 2,
+            GoodKind::YUAN => 3,
+        };
     }
 
     fn get_kind_by_token(&self, token: &String, mode: Mode) -> (GoodKind, usize) {
         let mut var = 0;
-        let mut index = 6;
-        // mode : buy or sell
-        for i in 0..self.lock_buy.len() {
+        let mut index = 0;
+        let mut array = self.lock_buy.as_ref();
+
+        match mode {
+            Mode::Buy => {},
+            Mode::Sell => {
+                array = self.lock_sell.as_ref();
+            },
+        }
+        for i in 0..self.goods.len() {
             for j in 0..MAXLOCK {
-                let _ = match mode {
-                    Mode::Buy => {
-                        if self.lock_buy[i].lock[j].token == *token {
-                            var = i;
-                            index = j;
-                            break;
-                        }
-                    }
-                    Mode::Sell => {
-                        if self.lock_sell[i].lock[j].token == *token {
-                            var = i;
-                            index = j;
-                            break;
-                        }
-                    }
-                };
+                if array[i].lock[j].token == *token {
+                    var = i;
+                    index = j;
+                    break;
+                }
             }
         }
-        return match var {
-            1 => (GoodKind::USD, index),
-            2 => (GoodKind::YEN, index),
-            3 => (GoodKind::YUAN, index),
-            _ => (GoodKind::EUR, index),
-        };
+
+        (self.goods[var].get_kind(), index)
     }
 
     fn hash(&self, v1: &GoodKind, v2: f32, v3: f32, v4: &String) -> String {
@@ -555,7 +508,7 @@ impl ZSE {
         digest(format!("{}{}{}{}{}", a, b, c, d, salt))
     }
 
-    fn remove(&mut self, token: String, index: usize, pos: usize, mode: Mode) {
+    fn remove_lock(&mut self, token: String, index: usize, pos: usize, mode: Mode) {
         let _ = match mode {
             Mode::Buy => {
                 self.token_buy.insert(token, false);
@@ -699,7 +652,7 @@ fn print_metadata(buffer: String) {
     use std::io::Write;
     use chrono::Local;
 
-    let file = OpenOptions::new().append(true).open(PATH_LOG); //open
+    let file = OpenOptions::new().append(true).open(PATH_LOG);
     match file {
         Ok(mut file) => {
             let date = Local::now();
