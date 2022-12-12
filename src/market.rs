@@ -17,8 +17,7 @@ pub struct ZSE {
     lock_buy: [Lock; 4],
     lock_sell: [Lock; 4],
     locked_qty: [f32; 4],
-    token_sell: HashMap<String, bool>,
-    token_buy: HashMap<String, bool>,
+    token: HashMap<String, bool>,
     markets: Vec<Box<dyn Notifiable>>,
     external: bool,
     conversion_timer: [[i32; 4]; 4],
@@ -76,20 +75,30 @@ impl Notifiable for ZSE {
                     self.prices_buy[index] += diff * 0.8;
                     self.internal_conversion();
                 }
-                if self.external && (unit_price - (unit_price * 0.05)) < self.prices_buy[index] {
-                    self.prices_sell[index] = unit_price + (unit_price * 0.05);
+                if self.external && unit_price < self.prices_buy[index] {
+                    self.prices_buy[index] = unit_price - (unit_price * 0.015);
                 }
-            }
+            },
             EventKind::Sold => {
                 if !self.external {
                     let diff = self.prices_sell[index] - exchange;
                     self.prices_sell[index] -= diff * 0.8;
                     self.internal_conversion();
                 }
-                if self.external && (unit_price + (unit_price * 0.05)) > self.prices_buy[index] {
-                    self.prices_buy[index] = unit_price - (unit_price * 0.05);
+                if self.external && unit_price > self.prices_sell[index] {
+                    self.prices_sell[index] = unit_price + (unit_price * 0.015);
                 }
-            }
+            },
+            EventKind::LockedBuy => {
+                if self.external && unit_price > self.prices_sell[index] {
+                    self.prices_sell[index] = unit_price + (unit_price * 0.01);
+                }
+            },
+            EventKind::LockedSell => {
+                if self.external && unit_price < self.prices_buy[index] {
+                    self.prices_buy[index] = unit_price - (unit_price * 0.01);
+                }
+            },
             _ => {}
         };
         self.external = true;
@@ -134,8 +143,7 @@ impl Market for ZSE {
             lock_buy: [Lock::new(), Lock::new(), Lock::new(), Lock::new()],
             lock_sell: [Lock::new(), Lock::new(), Lock::new(), Lock::new()],
             locked_qty: [0.0; 4],
-            token_sell: HashMap::new(),
-            token_buy: HashMap::new(),
+            token: HashMap::new(),
             markets: Vec::new(),
             external: true,
             conversion_timer: [[0; 4]; 4],
@@ -173,8 +181,7 @@ impl Market for ZSE {
             lock_buy: [Lock::new(), Lock::new(), Lock::new(), Lock::new()],
             lock_sell: [Lock::new(), Lock::new(), Lock::new(), Lock::new()],
             locked_qty: [0.0; 4],
-            token_sell: HashMap::new(),
-            token_buy: HashMap::new(),
+            token: HashMap::new(),
             markets: Vec::new(),
             external: true,
             conversion_timer: [[0; 4]; 4],
@@ -309,7 +316,7 @@ impl Market for ZSE {
         self.lock_buy[index].last += 1;
         self.locked_qty[index] += quantity_to_buy;
 
-        self.token_buy.insert(token.clone(), true);
+        self.token.insert(token.clone(), true);
 
         let logcode = format!("LOCK_BUY-{}-KIND_TO_BUY:{}-QUANTITY_TO_BUY:{}-BID:{}-TOKEN:{}", trader_name.clone(), kind_to_buy, quantity_to_buy, bid, token.clone());
         print_metadata(logcode);
@@ -329,11 +336,11 @@ impl Market for ZSE {
         self.external = false;
         self.on_event(Event { kind: EventKind::Bought, quantity: agreed_quantity, price: agreed_price, good_kind: gk.clone() });
 
-        if !self.token_buy.contains_key(&*token) {
+        if !self.token.contains_key(&*token) {
             print_metadata(logcode);
             return Err(BuyError::UnrecognizedToken { unrecognized_token: token });
         }
-        if self.token_buy.contains_key(&*token) && !self.token_buy[&token] {
+        if self.token.contains_key(&*token) && !self.token[&token] {
             print_metadata(logcode);
             return Err(BuyError::ExpiredToken { expired_token: token });
         }
@@ -397,7 +404,7 @@ impl Market for ZSE {
         self.lock_sell[index].last += 1;
         self.locked_qty[0] += offer;
 
-        self.token_sell.insert(token.clone(), true);
+        self.token.insert(token.clone(), true);
 
         let logcode = format!("LOCK_SELL-{}-KIND_TO_SELL:{}-QUANTITY_TO_SELL:{}-OFFER:{}-TOKEN:{}", trader_name.clone(), kind_to_sell, quantity_to_sell, offer, token.clone());
         print_metadata(logcode);
@@ -418,11 +425,11 @@ impl Market for ZSE {
 
         let logcode = format!("BUY-TOKEN:{}-ERROR", token.clone());
 
-        if !self.token_sell.contains_key(&*token) {
+        if !self.token.contains_key(&*token) {
             print_metadata(logcode);
             return Err(SellError::UnrecognizedToken { unrecognized_token: token });
         }
-        if self.token_sell.contains_key(&*token) && !self.token_sell[&token] {
+        if self.token.contains_key(&*token) && !self.token[&token] {
             print_metadata(logcode);
             return Err(SellError::ExpiredToken { expired_token: token });
         }
@@ -509,14 +516,13 @@ impl ZSE {
     }
 
     fn remove_lock(&mut self, token: String, index: usize, pos: usize, mode: Mode) {
+        self.token.insert(token, false);
         let _ = match mode {
             Mode::Buy => {
-                self.token_buy.insert(token, false);
                 self.lock_buy[index].last -= 1;
                 self.lock_buy[index].lock[pos].remove();
             }
             Mode::Sell => {
-                self.token_sell.insert(token, false);
                 self.lock_sell[index].last -= 1;
                 self.lock_sell[index].lock[pos].remove();
             }
@@ -533,11 +539,11 @@ impl ZSE {
                     self.lock_sell[i].lock[j].lock_counter += 1;
                 }
                 if self.lock_buy[i].lock[j].lock_counter >= MAXTIME {
-                    self.token_buy.insert(self.lock_buy[i].lock[j].token.clone(), false);
+                    self.token.insert(self.lock_buy[i].lock[j].token.clone(), false);
                     self.lock_buy[i].lock[j].remove();
                 }
                 if self.lock_sell[i].lock[j].lock_counter >= MAXTIME {
-                    self.token_sell.insert(self.lock_buy[i].lock[j].token.clone(), false);
+                    self.token.insert(self.lock_sell[i].lock[j].token.clone(), false);
                     self.lock_sell[i].lock[j].remove();
                 }
             }
@@ -572,13 +578,15 @@ impl ZSE {
                     GoodKind::YUAN => DEFAULT_EUR_YUAN_EXCHANGE_RATE,
                 };
 
-                let random_number = rand::thread_rng().gen_range(20..30);
-                let value_to_convert = max_good.get_qty() * random_number as f32 / 100.0;
+                let mut value_to_convert = 0.0;;
+                if max_good.get_qty() > 10000.0 {
+                    value_to_convert = 10000.0;
+                    self.conversion_timer[self.get_index_by_goodkind(&max_good.get_kind())][self.get_index_by_goodkind(&min_good.get_kind())] = 100;
+                }
+
                 let _ = self.goods[self.get_index_by_goodkind(&max_good.get_kind())].split(value_to_convert);
                 let new_good = Good::new(min_good.get_kind(), value_to_convert * conversion_rate_to / conversion_rate_from);
                 let _ = self.goods[self.get_index_by_goodkind(&min_good.get_kind())].merge(new_good);
-
-                self.conversion_timer[self.get_index_by_goodkind(&max_good.get_kind())][self.get_index_by_goodkind(&min_good.get_kind())] = 100;
             }
         }
     }
