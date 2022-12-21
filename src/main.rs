@@ -38,7 +38,6 @@ fn main() {
     println!("{:?}", market.borrow().get_goods());
 }
 
-
 pub enum GoodKind {
     EUR,
     YEN,
