@@ -7,7 +7,6 @@ use unitn_market_2022::event::event::{Event, EventKind};
 
 mod market;
 mod wrapper;
-mod tests;
 
 #[derive(Hash)]
 struct Request_good{
