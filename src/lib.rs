@@ -5,7 +5,7 @@ use unitn_market_2022::market::{Market, market_test};
 use sha256::digest;
 use unitn_market_2022::event::event::{Event, EventKind};
 
-mod market;
+pub mod market;
 mod wrapper;
 
 #[derive(Hash)]
