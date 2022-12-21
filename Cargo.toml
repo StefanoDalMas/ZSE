@@ -5,6 +5,7 @@ edition = "2021"
 
 authors = ["Stefano Dal Mas, Andy Ion Ditu, Marina Segala"]
 publish = ["kellnr"]
+exclude = [".DS_Store"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
