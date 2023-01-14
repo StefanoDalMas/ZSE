@@ -55,7 +55,9 @@ impl Notifiable for ZSE {
 
         self.increment_lock_counter_and_reset();
         for m in &mut self.markets {
-            m.on_event(event.clone());
+            if !self.external {
+                m.on_event(event.clone());
+            }
         }
 
         let unit_price = event.price / event.quantity;
