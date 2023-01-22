@@ -580,7 +580,7 @@ impl ZSE {
                     GoodKind::YUAN => DEFAULT_EUR_YUAN_EXCHANGE_RATE,
                 };
 
-                let mut value_to_convert = 0.0;;
+                let mut value_to_convert = 0.0;
                 if max_good.get_qty() > 10000.0 {
                     value_to_convert = 10000.0;
                     self.conversion_timer[self.get_index_by_goodkind(&max_good.get_kind())][self.get_index_by_goodkind(&min_good.get_kind())] = 100;
