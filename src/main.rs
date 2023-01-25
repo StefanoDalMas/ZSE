@@ -39,13 +39,16 @@ fn main() {
     println!("{:?}", market.borrow().get_goods());
      */
 
-    let trader = trader::ZSE_Trader::new();
+    let mut trader = trader::ZSE_Trader::new();
     println!("{}", trader.get_name());
     for market in trader.get_markets() {
         println!("\n{}", market.borrow().get_name());
         println!("{}", market.borrow().get_budget());
         println!("{:?}", market.borrow().get_goods());
     }
+
+    trader.update_all_prices();
+    trader.print_prices();
 }
 
 pub enum GoodKind {
