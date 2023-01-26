@@ -1,13 +1,15 @@
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::fmt::Debug;
 use std::rc::Rc;
 
+use rand::Rng;
 use rcnz_market::rcnz::RCNZ;
 use bfb::bfb_market::Bfb;
 use BVC::BVCMarket;
 
 use unitn_market_2022::good::good_kind::GoodKind;
-use unitn_market_2022::market::Market;
+use unitn_market_2022::market::{Market, LockBuyError, LockSellError};
 
 pub struct ZSE_Trader {
     name: String,
@@ -16,8 +18,8 @@ pub struct ZSE_Trader {
 }
 #[derive(Debug,Clone)]
 enum Mode {
-    Buy,
-    Sell,
+    Buy, //0
+    Sell, //1
 }
 
 enum Bazaar {
@@ -35,7 +37,7 @@ pub struct Value{
 
 impl Value{
     fn new_buy() -> Self{
-        Value { val: 1000000.0, market: "".to_string(), mode: Mode::Buy }
+        Value { val: 0.0, market: "".to_string(), mode: Mode::Buy }
     }
     fn new_sell() -> Self{
         Value { val: 1000000.0, market: "".to_string(), mode: Mode::Sell }
@@ -77,8 +79,8 @@ impl ZSE_Trader {
 
     pub fn update_all_prices(&mut self) {
         for m in &self.markets {
-            let index = get_index_by_market(m.borrow().get_name());
-            let goods = m.borrow().get_goods();
+            let index = get_index_by_market(m.borrow_mut().get_name());
+            let goods = m.borrow_mut().get_goods();
             for g in goods {
                 let index_kind = get_index_by_goodkind(&g.good_kind);
                 self.prices[0][index][index_kind] = g.exchange_rate_buy;
@@ -106,42 +108,37 @@ impl ZSE_Trader {
         }
     }
 
-    pub fn find_min_sell_price(&self){ //in order to buy with less loss
-        use rand::Rng;
+    pub fn find_min_sell_price(&self) -> Vec<Value>{ //in order to buy with less loss
         let mut min_sell_price_market: Vec<Value> = vec![Value::new_sell(); 4];
         for g in 0..4{ //goodking
-            for i in 0..self.prices[0].len(){ //market
-                if min_sell_price_market[g].val > self.prices[0][i][g]{
-                    min_sell_price_market[g].val = self.prices[0][i][g];
+            for i in 0..self.prices[1].len(){ //market
+                if min_sell_price_market[g].val > self.prices[1][i][g]{
+                    min_sell_price_market[g].val = self.prices[1][i][g];
                     min_sell_price_market[g].market = get_name_market(i);
-                } else if min_sell_price_market[g].val == self.prices[0][i][g]{
+                } else if min_sell_price_market[g].val == self.prices[1][i][g]{
                     let num = rand::thread_rng().gen_range(0..100);
                     if num % 2 == 0 {
-                        min_sell_price_market[g].val = self.prices[0][i][g];
+                        min_sell_price_market[g].val = self.prices[1][i][g];
                         min_sell_price_market[g].market = get_name_market(i);
                     }
                 }
             }
         }
-        for g in 0..4{
-            println!("{} - {:?}", get_goodkind(g), min_sell_price_market[g]);
-        }
+        min_sell_price_market
     }
     
-    pub fn find_mid_buy_price(&self){
-        let mut mid_buy_price_market: Vec<Value> = vec![Value::new_sell(); 4];
+    pub fn find_mid_buy_price(&self) -> Vec<Value>{
+        let mut mid_buy_price_market: Vec<Value> = vec![Value::new_buy(); 4];
         for g in 0..4{
             let min_buy = self.find_min_max_buy(g).0;
             let max_buy = self.find_min_max_buy(g).1;
             let mut vec = vec![0,1,2];
             vec.remove(min_buy);
             vec.remove(max_buy);
-            mid_buy_price_market[g].val = self.prices[1][vec[0]][g];
+            mid_buy_price_market[g].val = self.prices[0][vec[0]][g];
             mid_buy_price_market[g].market = get_name_market(vec[0]);
         }
-        for g in 0..4{
-            println!("{} - {:?}", get_goodkind(g), mid_buy_price_market[g]);
-        }
+        mid_buy_price_market
     }
     
     pub fn find_min_max_buy(&self, g: usize) -> (usize, usize){

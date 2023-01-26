@@ -4,6 +4,7 @@ use unitn_market_2022::market::{Market, market_test};
 
 use sha256::digest;
 use unitn_market_2022::event::event::{Event, EventKind};
+use unitn_market_2022::good::good_kind::GoodKind;
 
 pub mod market;
 mod trader;
@@ -50,12 +51,10 @@ fn main() {
     trader.update_all_prices();
     trader.print_prices();
     println!();
-    trader.find_min_sell_price();
-    println!();
-    trader.find_mid_buy_price();
+    
 }
 
-pub enum GoodKind {
+pub enum GK {
     EUR,
     YEN,
     USD,
