@@ -49,8 +49,10 @@ fn main() {
 
     trader.update_all_prices();
     trader.print_prices();
-    println!(" ");
+    println!();
     trader.find_min_sell_price();
+    println!();
+    trader.find_mid_buy_price();
 }
 
 pub enum GoodKind {

@@ -109,8 +109,8 @@ impl ZSE_Trader {
     pub fn find_min_sell_price(&self){ //in order to buy with less loss
         use rand::Rng;
         let mut min_sell_price_market: Vec<Value> = vec![Value::new_sell(); 4];
-        for g in 0..4{
-            for i in 0..self.prices[0].len(){
+        for g in 0..4{ //goodking
+            for i in 0..self.prices[0].len(){ //market
                 if min_sell_price_market[g].val > self.prices[0][i][g]{
                     min_sell_price_market[g].val = self.prices[0][i][g];
                     min_sell_price_market[g].market = get_name_market(i);
@@ -127,7 +127,42 @@ impl ZSE_Trader {
             println!("{} - {:?}", get_goodkind(g), min_sell_price_market[g]);
         }
     }
+    
+    pub fn find_mid_buy_price(&self){
+        let mut mid_buy_price_market: Vec<Value> = vec![Value::new_sell(); 4];
+        for g in 0..4{
+            let min_buy = self.find_min_max_buy(g).0;
+            let max_buy = self.find_min_max_buy(g).1;
+            let mut vec = vec![0,1,2];
+            vec.remove(min_buy);
+            vec.remove(max_buy);
+            mid_buy_price_market[g].val = self.prices[1][vec[0]][g];
+            mid_buy_price_market[g].market = get_name_market(vec[0]);
+        }
+        for g in 0..4{
+            println!("{} - {:?}", get_goodkind(g), mid_buy_price_market[g]);
+        }
+    }
+    
+    pub fn find_min_max_buy(&self, g: usize) -> (usize, usize){
+        let mut min = 10000.0;
+        let mut max = 0.0;
+        let mut x = 3;
+        let mut y = 3;
+        for i in 0..self.prices[0].len(){ //market
+            if min > self.prices[0][i][g]{
+                min = self.prices[0][i][g];
+                x = i;
+            }
+            if max < self.prices[0][i][g]{
+                max = self.prices[0][i][g];
+                y = i;
+            }
+        }
+        (x, y) //(min, max)
+    }
 }
+
 
 fn get_index_by_market(m: &str) -> usize {
     match m {
