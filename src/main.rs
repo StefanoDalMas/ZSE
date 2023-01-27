@@ -51,6 +51,12 @@ fn main() {
     trader.update_all_prices();
     trader.print_prices();
     println!();
+    let (m,r) = trader.try_buy_lock();
+    if let Ok(token) = r {
+        //todo!();
+        println!("olee");
+        //buy
+    }
     
 }
 

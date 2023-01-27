@@ -8,13 +8,17 @@ use rcnz_market::rcnz::RCNZ;
 use bfb::bfb_market::Bfb;
 use BVC::BVCMarket;
 
+use unitn_market_2022::good::good::Good;
 use unitn_market_2022::good::good_kind::GoodKind;
-use unitn_market_2022::market::{Market, LockBuyError, LockSellError};
+use unitn_market_2022::market::{Market, LockBuyError, LockSellError, BuyError};
+
+const STARTING_CAPITAL: f32 = 10000000.0; //decidere noi, messa a caso
 
 pub struct ZSE_Trader {
     name: String,
     markets: Vec<Rc<RefCell<dyn Market>>>,
     prices: Vec<Vec<Vec<f32>>>,
+    //vec di goods e penso anche dei prezzi per fare cose
 }
 #[derive(Debug,Clone)]
 enum Mode {
@@ -158,6 +162,21 @@ impl ZSE_Trader {
         }
         (x, y) //(min, max)
     }
+
+    pub fn try_buy_lock(&self) -> (&Rc<RefCell<dyn Market>>, Result<String, LockBuyError>){
+        let want_buy = self.find_min_sell_price();
+        let i = 1;
+        println!("{} -> {:?}", get_goodkind_by_index(i), want_buy[i]);
+        
+        let m = &self.markets[get_index_by_market(&want_buy[i].market)];
+        (m, m.borrow_mut().lock_buy(GoodKind::USD, 20.0, 20.0, self.get_name().clone()))
+        //change qty_to_buy and bid -> messi a caso anche questi //todo!()
+    }
+
+    pub fn buy(&self, m: &Rc<RefCell<dyn Market>>,  token: String) -> Result<Good, BuyError>{
+        todo!()
+       // m.borrow_mut().buy(token, &mut g)
+    }
 }
 
 
@@ -189,7 +208,7 @@ fn get_index_by_goodkind(kind: &GoodKind) -> usize {
     };
 }
 
-fn get_goodkind(i: usize) -> String{
+fn get_goodkind_by_index(i: usize) -> String{
     let gk = match i {
         0 => "EUR",
         1 => "USD",
