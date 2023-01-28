@@ -17,7 +17,8 @@ const STARTING_CAPITAL: f32 = 10000000.0; //decidere noi, messa a caso
 pub struct ZSE_Trader {
     name: String,
     markets: Vec<Rc<RefCell<dyn Market>>>,
-    prices: Vec<Vec<Vec<f32>>>,
+    prices: Vec<Vec<Vec<f32>>>, //prices of markets
+    goods: Vec<Good>, //goods of the trader
     //vec di goods e penso anche dei prezzi per fare cose
 }
 #[derive(Debug,Clone)]
@@ -66,7 +67,14 @@ impl ZSE_Trader {
         markets.push(Bfb::new_random());
         markets.push(BVCMarket::new_random());
         let prices = vec![vec![vec![0.0; 4]; 3]; 2];
-        Self { name, markets, prices }
+        let goods = vec![
+            Good::new(GoodKind::EUR, STARTING_CAPITAL), 
+            Good::new(GoodKind::USD, 0.0), 
+            Good::new(GoodKind::YEN, 0.0), 
+            Good::new(GoodKind::YUAN, 0.0),
+        ];
+        
+        Self { name, markets, prices , goods }
     }
 
     pub fn get_name(&self) -> &String {
@@ -112,7 +120,7 @@ impl ZSE_Trader {
         }
     }
 
-    pub fn find_min_sell_price(&self) -> Vec<Value>{ //in order to buy with less loss
+    pub fn find_min_sell_price(&self) -> Vec<Value>{ 
         let mut min_sell_price_market: Vec<Value> = vec![Value::new_sell(); 4];
         for g in 0..4{ //goodking
             for i in 0..self.prices[1].len(){ //market
@@ -163,20 +171,36 @@ impl ZSE_Trader {
         (x, y) //(min, max)
     }
 
-    pub fn try_buy_lock(&self) -> (&Rc<RefCell<dyn Market>>, Result<String, LockBuyError>){
-        let want_buy = self.find_min_sell_price();
-        let i = 1;
+    pub fn try_lock_and_buy(&mut self) { //todo!() -> impostare GoodKind in base a quanto mi serve, nel mentre messo a caso
+        let want_buy = self.find_mid_buy_price();
+        let i = 1; //for ex USD -> 1
+        let prova = "BVC".to_string();
         println!("{} -> {:?}", get_goodkind_by_index(i), want_buy[i]);
         
-        let m = &self.markets[get_index_by_market(&want_buy[i].market)];
-        (m, m.borrow_mut().lock_buy(GoodKind::USD, 20.0, 20.0, self.get_name().clone()))
-        //change qty_to_buy and bid -> messi a caso anche questi //todo!()
+        let m = &self.markets[get_index_by_market(&prova)];
+        let string: Result<String, LockBuyError>;
+        let offer: f32;
+        let qty = 20.0;
+        let b: Result<Good, BuyError>;
+        
+        let min_bid_offer = m.borrow_mut().get_buy_price(GoodKind::USD, 20.0);
+        if min_bid_offer.is_ok(){
+            offer = (min_bid_offer.unwrap() as i32 ) as f32 + 0.82 ;
+            string = m.borrow_mut().lock_buy(GoodKind::USD, qty, offer, self.get_name().clone());
+            if let Ok(token) = string {
+                b = m.borrow_mut().buy(token, &mut self.goods[0]);
+                //self.goods[1].merge(Good{ kind: GoodKind::USD, quantity: qty });
+                //AGGIUNGERE LA QUANTITà COMPRATA AL MIO VEC DI GOOD
+                println!("buy USD : {:?}", b);
+                println!("{} -- {}", self.goods[0], self.goods[1]);
+                self.update_all_prices(); //?
+                self.print_prices();      //?
+            }
+        } else {
+            panic!("Market error");
+        }
     }
 
-    pub fn buy(&self, m: &Rc<RefCell<dyn Market>>,  token: String) -> Result<Good, BuyError>{
-        todo!()
-       // m.borrow_mut().buy(token, &mut g)
-    }
 }
 
 
@@ -184,6 +208,7 @@ fn get_index_by_market(m: &str) -> usize {
     match m {
         "RCNZ" => 0,
         "Baku stock exchange" => 1,
+        "BFB" => 1,
         "BVC" => 2,
         _ => panic!("Market not found"),
     }
