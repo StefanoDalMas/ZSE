@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::fmt::Debug;
 use std::rc::Rc;
@@ -8,12 +7,11 @@ use rcnz_market::rcnz::RCNZ;
 use bfb::bfb_market::Bfb;
 use BVC::BVCMarket;
 
-use unitn_market_2022::good::good::Good;
-use unitn_market_2022::good::good_kind::GoodKind;
+use unitn_market_2022::good::{good::Good, good_kind::GoodKind};
 use unitn_market_2022::market::{Market, LockBuyError, LockSellError, BuyError};
+use unitn_market_2022::subscribe_each_other;
 
 const STARTING_CAPITAL: f32 = 10000000.0; //decidere noi, messa a caso
-
 pub struct ZSE_Trader {
     name: String,
     markets: Vec<Rc<RefCell<dyn Market>>>,
@@ -66,6 +64,7 @@ impl ZSE_Trader {
         markets.push(RCNZ::new_random());
         markets.push(Bfb::new_random());
         markets.push(BVCMarket::new_random());
+        subscribe_each_other!(markets[0], markets[1], markets[2]);
         let prices = vec![vec![vec![0.0; 4]; 3]; 2];
         let goods = vec![
             Good::new(GoodKind::EUR, STARTING_CAPITAL), 
@@ -120,7 +119,7 @@ impl ZSE_Trader {
         }
     }
 
-    pub fn find_min_sell_price(&self) -> Vec<Value>{ 
+    fn find_min_sell_price(&self) -> Vec<Value>{ 
         let mut min_sell_price_market: Vec<Value> = vec![Value::new_sell(); 4];
         for g in 0..4{ //goodking
             for i in 0..self.prices[1].len(){ //market
@@ -139,7 +138,7 @@ impl ZSE_Trader {
         min_sell_price_market
     }
     
-    pub fn find_mid_buy_price(&self) -> Vec<Value>{
+    fn find_mid_buy_price(&self) -> Vec<Value>{
         let mut mid_buy_price_market: Vec<Value> = vec![Value::new_buy(); 4];
         for g in 0..4{
             let min_buy = self.find_min_max_buy(g).0;
@@ -153,7 +152,7 @@ impl ZSE_Trader {
         mid_buy_price_market
     }
     
-    pub fn find_min_max_buy(&self, g: usize) -> (usize, usize){
+    fn find_min_max_buy(&self, g: usize) -> (usize, usize){
         let mut min = 10000.0;
         let mut max = 0.0;
         let mut x = 3;
@@ -171,11 +170,12 @@ impl ZSE_Trader {
         (x, y) //(min, max)
     }
 
-    pub fn try_lock_and_buy(&mut self) { //todo!() -> impostare GoodKind in base a quanto mi serve, nel mentre messo a caso
+    pub fn try_lock_and_buy(&mut self) { 
         let want_buy = self.find_mid_buy_price();
-        let i = 1; //for ex USD -> 1
-        let prova = "BVC".to_string();
-        println!("{} -> {:?}", get_goodkind_by_index(i), want_buy[i]);
+        let index = rand::thread_rng().gen_range(1..4);
+        let g = get_goodkind_by_index(&index);
+        let prova = &want_buy[index].market;
+        println!("{} -> {:?}", g, want_buy[index]);
         
         let m = &self.markets[get_index_by_market(&prova)];
         let string: Result<String, LockBuyError>;
@@ -183,21 +183,25 @@ impl ZSE_Trader {
         let qty = 20.0;
         let b: Result<Good, BuyError>;
         
-        let min_bid_offer = m.borrow_mut().get_buy_price(GoodKind::USD, 20.0);
+        let min_bid_offer = m.borrow_mut().get_buy_price(g, 20.0);
         if min_bid_offer.is_ok(){
             offer = (min_bid_offer.unwrap() as i32 ) as f32 + 0.82 ;
-            string = m.borrow_mut().lock_buy(GoodKind::USD, qty, offer, self.get_name().clone());
+            string = m.borrow_mut().lock_buy(g, qty, offer, self.get_name().clone());
             if let Ok(token) = string {
                 b = m.borrow_mut().buy(token, &mut self.goods[0]);
-                //self.goods[1].merge(Good{ kind: GoodKind::USD, quantity: qty });
-                //AGGIUNGERE LA QUANTITà COMPRATA AL MIO VEC DI GOOD
-                println!("buy USD : {:?}", b);
-                println!("{} -- {}", self.goods[0], self.goods[1]);
-                self.update_all_prices(); //?
-                self.print_prices();      //?
+                let res = self.goods[index].merge(Good::new(g, qty));
+                if res.is_err(){ panic!("Error: {:?}", res); }
+                println!("buy {:?} : {:?}", g, b);
+                println!("{} -- {}", self.goods[0], self.goods[index]);
+                self.update_all_prices(); 
+                self.print_prices();      
             }
-        } else {
-            panic!("Market error");
+        } else { panic!("Market error"); }
+    }
+    
+    pub fn print_goods(&self){
+        for g in &self.goods{
+            println!("{:?} ", g );
         }
     }
 
@@ -233,13 +237,11 @@ fn get_index_by_goodkind(kind: &GoodKind) -> usize {
     };
 }
 
-fn get_goodkind_by_index(i: usize) -> String{
-    let gk = match i {
-        0 => "EUR",
-        1 => "USD",
-        2 => "YEN",
-        3 => "YUAN",
-        _ => "",
+fn get_goodkind_by_index(i: &usize) -> GoodKind{
+    return match *i {
+        0 => GoodKind::EUR,
+        1 => GoodKind::USD,
+        2 => GoodKind::YEN,
+        _ => GoodKind::YUAN,
     };
-    gk.to_string()
 }

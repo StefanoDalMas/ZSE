@@ -52,8 +52,11 @@ fn main() {
     trader.print_prices();
     println!();
     let mut token: Vec<String> = Vec::new();
-    trader.try_buy_lock();
-    
+    for _ in 0..5{
+        trader.try_lock_and_buy();
+    }
+    println!();
+    trader.print_goods();
 }
 
 pub enum GK {
