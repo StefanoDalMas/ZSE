@@ -11,7 +11,7 @@ use unitn_market_2022::good::{good::Good, good_kind::GoodKind};
 use unitn_market_2022::market::{Market, LockBuyError, LockSellError, BuyError};
 use unitn_market_2022::subscribe_each_other;
 
-const STARTING_CAPITAL: f32 = 10000000.0; //decidere noi, messa a caso
+const STARTING_CAPITAL: f32 = 100000.0; //decidere noi, messa a caso
 pub struct ZSE_Trader {
     name: String,
     markets: Vec<Rc<RefCell<dyn Market>>>,
@@ -35,15 +35,14 @@ enum Bazaar {
 pub struct Value{
     val: f32,
     market: String,
-    mode: Mode, //mode of price in the market (sell_price -> trader want to buy some goods and vice-versa)
 }
 
 impl Value{
-    fn new_buy() -> Self{
-        Value { val: 0.0, market: "".to_string(), mode: Mode::Buy }
+    fn new_max() -> Self{
+        Value { val: 0.0, market: "".to_string() }
     }
-    fn new_sell() -> Self{
-        Value { val: 1000000.0, market: "".to_string(), mode: Mode::Sell }
+    fn new_min() -> Self{
+        Value { val: 1000000.0, market: "".to_string() }
     }
 }
 impl PartialEq for Value{
@@ -107,7 +106,7 @@ impl ZSE_Trader {
             } else {
                 println!("\nSell prices:");
             }
-            println!("      EUR      USD         YEN          YUAN");
+            println!("\tEUR\tUSD\t\tYEN\t\tYUAN");
             for j in 0..self.prices[i].len() {
                 let name = get_name_market(j);
                 print!("{}:\t", name);
@@ -116,95 +115,23 @@ impl ZSE_Trader {
                 }
                 println!();
             }
+            println!();
         }
     }
 
-    fn find_min_sell_price(&self) -> Vec<Value>{ 
-        let mut min_sell_price_market: Vec<Value> = vec![Value::new_sell(); 4];
-        for g in 0..4{ //goodking
-            for i in 0..self.prices[1].len(){ //market
-                if min_sell_price_market[g].val > self.prices[1][i][g]{
-                    min_sell_price_market[g].val = self.prices[1][i][g];
-                    min_sell_price_market[g].market = get_name_market(i);
-                } else if min_sell_price_market[g].val == self.prices[1][i][g]{
-                    let num = rand::thread_rng().gen_range(0..100);
-                    if num % 2 == 0 {
-                        min_sell_price_market[g].val = self.prices[1][i][g];
-                        min_sell_price_market[g].market = get_name_market(i);
-                    }
-                }
-            }
-        }
-        min_sell_price_market
-    }
-    
-    fn find_mid_buy_price(&self) -> Vec<Value>{
-        let mut mid_buy_price_market: Vec<Value> = vec![Value::new_buy(); 4];
-        for g in 0..4{
-            let min_buy = self.find_min_max_buy(g).0;
-            let max_buy = self.find_min_max_buy(g).1;
-            let mut vec = vec![0,1,2];
-            vec.remove(min_buy);
-            vec.remove(max_buy);
-            mid_buy_price_market[g].val = self.prices[0][vec[0]][g];
-            mid_buy_price_market[g].market = get_name_market(vec[0]);
-        }
-        mid_buy_price_market
-    }
-    
-    fn find_min_max_buy(&self, g: usize) -> (usize, usize){
-        let mut min = 10000.0;
-        let mut max = 0.0;
-        let mut x = 3;
-        let mut y = 3;
-        for i in 0..self.prices[0].len(){ //market
-            if min > self.prices[0][i][g]{
-                min = self.prices[0][i][g];
-                x = i;
-            }
-            if max < self.prices[0][i][g]{
-                max = self.prices[0][i][g];
-                y = i;
-            }
-        }
-        (x, y) //(min, max)
-    }
-
-    pub fn try_lock_and_buy(&mut self) { 
-        let want_buy = self.find_mid_buy_price();
-        let index = rand::thread_rng().gen_range(1..4);
-        let g = get_goodkind_by_index(&index);
-        let prova = &want_buy[index].market;
-        println!("{} -> {:?}", g, want_buy[index]);
-        
-        let m = &self.markets[get_index_by_market(&prova)];
-        let string: Result<String, LockBuyError>;
-        let offer: f32;
-        let qty = 20.0;
-        let b: Result<Good, BuyError>;
-        
-        let min_bid_offer = m.borrow_mut().get_buy_price(g, 20.0);
-        if min_bid_offer.is_ok(){
-            offer = (min_bid_offer.unwrap() as i32 ) as f32 + 0.82 ;
-            string = m.borrow_mut().lock_buy(g, qty, offer, self.get_name().clone());
-            if let Ok(token) = string {
-                b = m.borrow_mut().buy(token, &mut self.goods[0]);
-                let res = self.goods[index].merge(Good::new(g, qty));
-                if res.is_err(){ panic!("Error: {:?}", res); }
-                println!("buy {:?} : {:?}", g, b);
-                println!("{} -- {}", self.goods[0], self.goods[index]);
-                self.update_all_prices(); 
-                self.print_prices();      
-            }
-        } else { panic!("Market error"); }
-    }
-    
-    pub fn print_goods(&self){
+    pub fn print_goods_trader(&self){
         for g in &self.goods{
             println!("{:?} ", g );
         }
     }
-
+    
+    pub fn strategy_1(&mut self, x: i32){
+        try_lock_and_buy(self, x);
+    }
+   
+    pub fn get_qty_euro_trader(&mut self) -> f32{
+        self.goods[0].get_qty()
+    }
 }
 
 
@@ -244,4 +171,110 @@ fn get_goodkind_by_index(i: &usize) -> GoodKind{
         2 => GoodKind::YEN,
         _ => GoodKind::YUAN,
     };
+}
+
+fn find_min_price(t: &mut ZSE_Trader, mode: Mode, gk: usize) -> Value{
+    let mut price_market: Value = Value::new_min();
+    let x = match mode {
+        Mode::Buy => 0,
+        Mode::Sell => 1,
+    };
+    for i in 0..t.prices[x].len(){ //market
+        if t.prices[x][i][gk]>0.0  && price_market.val > t.prices[x][i][gk]{ //nel mentre che RCNZ fixa i prezzi neg
+            price_market.val = t.prices[x][i][gk];
+            price_market.market = get_name_market(i);
+        } else if price_market.val == t.prices[x][i][gk]{
+            let num = rand::thread_rng().gen_range(0..100);
+            if num % 2 == 0 {
+                price_market.val = t.prices[x][i][gk];
+                price_market.market = get_name_market(i);
+            }
+        }
+    }
+    price_market
+}
+
+fn find_max_price(t: &mut ZSE_Trader, mode: Mode, gk: usize) -> Value{
+    let mut price_market: Value = Value::new_max();
+    let x = match mode {
+        Mode::Buy => 0,
+        Mode::Sell => 1,
+    };
+    for i in 0..t.prices[x].len(){ //market
+        if price_market.val < t.prices[x][i][gk]{
+            price_market.val = t.prices[x][i][gk];
+            price_market.market = get_name_market(i);
+        } else if price_market.val == t.prices[x][i][gk]{
+            let num = rand::thread_rng().gen_range(0..100);
+            if num % 2 == 1 {
+                price_market.val = t.prices[x][i][gk];
+                price_market.market = get_name_market(i);
+            }
+        }
+    }
+    price_market
+}
+
+fn find_mid_price(t: &mut ZSE_Trader, mode: Mode, gk: usize) -> Value {
+    let mut price_market: Value = Value::new_max();
+    let min = get_index_by_market((find_min_price(t, mode.clone(), gk).market).as_str());
+    let max = get_index_by_market((find_max_price(t, mode.clone(), gk).market).as_str());
+    println!("min: {} - max: {}", min, max);
+    
+    let mut v: Vec<usize>= vec![0,1,2];
+    v.retain(|&x| x!=min && x!=max);
+    
+    let x = match mode {
+        Mode::Buy => 0,
+        Mode::Sell => 1,
+    };
+
+    if t.prices[x][v[0]][gk] < 0.0 {
+        v[0] = min;
+    }
+    
+    price_market.market = get_name_market(v[0]);
+    price_market.val = t.prices[x][v[0]][gk];
+    price_market
+}
+
+fn try_lock_and_buy(trader: &mut ZSE_Trader, count: i32) { 
+    let index = rand::thread_rng().gen_range(0..18)%3+1; //chose randomly between USD, YEN, YUAN 
+    let g = get_goodkind_by_index(&index);
+
+    /*let mut method = || -> Vec<Value>{
+        if count%2==0{ find_min_price(self, Mode::Buy, index) }
+        else if count%3==1 { find_max_price(self, Mode::Buy, index) } 
+        else { find_mid_price(self, Mode::Buy, index) }
+    }; */ 
+    //let want_buy = method();
+    let want_buy = if count%3==0{ find_min_price(trader, Mode::Buy, index) }
+                                else if count%3==1 { find_max_price(trader, Mode::Buy, index) } 
+                                else { find_mid_price(trader, Mode::Buy, index) };
+    //let want_buy = Value{ val: self.prices[0][2][index], market: "BVC".to_string() };
+    let prova = &want_buy.market;
+    println!("{} -> {:?} [{}]", g, want_buy, count%3);
+    
+    let m = &trader.markets[get_index_by_market(&prova)];
+    let string: Result<String, LockBuyError>;
+    let offer: f32;
+    let qty = 20.0;
+    let b: Result<Good, BuyError>;
+    
+    let min_bid_offer = m.borrow_mut().get_buy_price(g, 20.0);
+    
+    if min_bid_offer.is_ok(){
+        offer = min_bid_offer.clone().unwrap() + 0.8293 ;
+        println!("PROVA: {} vs {}", min_bid_offer.unwrap().clone(), offer);
+        string = m.borrow_mut().lock_buy(g, qty, offer, trader.get_name().clone());
+        if let Ok(token) = string {
+            b = m.borrow_mut().buy(token, &mut trader.goods[0]);
+            let res = trader.goods[index].merge(Good::new(g, qty));
+            if res.is_err(){ panic!("Error: {:?}", res); }
+            println!("buy {:?} : {:?}", g, b);
+            println!("{} -- {}", trader.goods[0], trader.goods[index]);
+            trader.update_all_prices(); 
+            trader.print_prices();      
+        } else { panic!("{:?}", string); }
+    } else { panic!("Market error"); }
 }

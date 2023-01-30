@@ -3,8 +3,6 @@ use std::hash::{Hash, Hasher};
 use unitn_market_2022::market::{Market, market_test};
 
 use sha256::digest;
-use unitn_market_2022::event::event::{Event, EventKind};
-use unitn_market_2022::good::good_kind::GoodKind;
 
 pub mod market;
 mod trader;
@@ -51,12 +49,15 @@ fn main() {
     trader.update_all_prices();
     trader.print_prices();
     println!();
-    let mut token: Vec<String> = Vec::new();
-    for _ in 0..5{
-        trader.try_lock_and_buy();
+    
+    let mut count = 0;
+    //while trader.get_qty_euro_trader() > 4000.0 { //num messo a caso per adesso
+    for _ in 0..7{ //si deve aspettare che BVC fixano perchè ad una certa fanno un unwrap su un none a caso
+        trader.strategy_1(count);
+        count += 1;
     }
     println!();
-    trader.print_goods();
+    trader.print_goods_trader();
 }
 
 pub enum GK {
