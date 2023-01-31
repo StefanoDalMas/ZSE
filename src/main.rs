@@ -51,9 +51,8 @@ fn main() {
     println!();
     
     let mut count = 0;
-    //while trader.get_qty_euro_trader() > 4000.0 { //num messo a caso per adesso
-    for _ in 0..7{ //si deve aspettare che BVC fixano perchè ad una certa fanno un unwrap su un none a caso
-        trader.strategy_1(count);
+    while trader.get_qty_euro_trader() > 50.0 { //num messo a caso per adesso
+        trader.tentativo_1(count);
         count += 1;
     }
     println!();

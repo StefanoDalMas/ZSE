@@ -4,9 +4,9 @@ version = 3
 
 [[package]]
 name = "BVC"
-version = "0.1.6"
+version = "0.1.8"
 source = "registry+git://advancedprogramming.disi.unitn.it/index"
-checksum = "0d151f22e5fcac3e8f5c927e8922bf505f78d3a8063866805e3f8164f16d9a14"
+checksum = "e49533bca9032b427a1980966960aacee11e094e1470945501e812eb740e804e"
 dependencies = [
  "chrono",
  "rand 0.7.3",
@@ -43,9 +43,9 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
 name = "bfb"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+git://advancedprogramming.disi.unitn.it/index"
-checksum = "c683240686f58f3002f8e76c2f1b46b1b9755771891052f0f5194217d423ae1f"
+checksum = "a97875da76d5cfeb3064cc4dc4da2e968adbdcfed2485f69a9d088b2489efd02"
 dependencies = [
  "chrono",
  "log",

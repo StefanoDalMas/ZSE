@@ -125,7 +125,7 @@ impl ZSE_Trader {
         }
     }
     
-    pub fn strategy_1(&mut self, x: i32){
+    pub fn tentativo_1(&mut self, x: i32){
         try_lock_and_buy(self, x);
     }
    
@@ -219,7 +219,6 @@ fn find_mid_price(t: &mut ZSE_Trader, mode: Mode, gk: usize) -> Value {
     let mut price_market: Value = Value::new_max();
     let min = get_index_by_market((find_min_price(t, mode.clone(), gk).market).as_str());
     let max = get_index_by_market((find_max_price(t, mode.clone(), gk).market).as_str());
-    println!("min: {} - max: {}", min, max);
     
     let mut v: Vec<usize>= vec![0,1,2];
     v.retain(|&x| x!=min && x!=max);
@@ -229,9 +228,7 @@ fn find_mid_price(t: &mut ZSE_Trader, mode: Mode, gk: usize) -> Value {
         Mode::Sell => 1,
     };
 
-    if t.prices[x][v[0]][gk] < 0.0 {
-        v[0] = min;
-    }
+    if t.prices[x][v[0]][gk] < 0.0 { v[0] = min; }
     
     price_market.market = get_name_market(v[0]);
     price_market.val = t.prices[x][v[0]][gk];
@@ -252,29 +249,53 @@ fn try_lock_and_buy(trader: &mut ZSE_Trader, count: i32) {
                                 else if count%3==1 { find_max_price(trader, Mode::Buy, index) } 
                                 else { find_mid_price(trader, Mode::Buy, index) };
     //let want_buy = Value{ val: self.prices[0][2][index], market: "BVC".to_string() };
-    let prova = &want_buy.market;
-    println!("{} -> {:?} [{}]", g, want_buy, count%3);
     
-    let m = &trader.markets[get_index_by_market(&prova)];
+    println!("{} -> {:?}", g, want_buy);
+    
+    let m = &trader.markets[get_index_by_market(&want_buy.market)];
     let string: Result<String, LockBuyError>;
     let offer: f32;
-    let qty = 20.0;
-    let b: Result<Good, BuyError>;
+    let qty =  generate_qty(&trader, m, g);
+    let buy: Result<Good, BuyError>;
+
+    if qty > 0.0{
+        let min_bid_offer = m.borrow_mut().get_buy_price(g, qty);
+        if min_bid_offer.is_ok(){
+            
+            offer = min_bid_offer.clone().unwrap() + 0.8293 ;
+            if offer > trader.goods[0].get_qty(){ //check for InsufficientGoodQuantity - buy
+
+                return; //CANNOT AFFORD
+            }
+        
+            string = m.borrow_mut().lock_buy(g, qty, offer, trader.get_name().clone());
+            
+            if let Ok(token) = string {
+                buy = m.borrow_mut().buy(token, &mut trader.goods[0]);
+                let res = trader.goods[index].merge(Good::new(g, qty));
+                
+                if res.is_err(){ panic!("Error: {:?}", res); }
+                
+                println!("buy {:?} : {:?}", g, buy);
+                println!("{} -- {}\n", trader.goods[0], trader.goods[index]);
+                trader.update_all_prices(); 
+                //trader.print_prices();     
+
+            } else { panic!("{:?}", string); }
+
+        } else { panic!("Market error: {:?}", min_bid_offer); }
+    }
     
-    let min_bid_offer = m.borrow_mut().get_buy_price(g, 20.0);
-    
-    if min_bid_offer.is_ok(){
-        offer = min_bid_offer.clone().unwrap() + 0.8293 ;
-        println!("PROVA: {} vs {}", min_bid_offer.unwrap().clone(), offer);
-        string = m.borrow_mut().lock_buy(g, qty, offer, trader.get_name().clone());
-        if let Ok(token) = string {
-            b = m.borrow_mut().buy(token, &mut trader.goods[0]);
-            let res = trader.goods[index].merge(Good::new(g, qty));
-            if res.is_err(){ panic!("Error: {:?}", res); }
-            println!("buy {:?} : {:?}", g, b);
-            println!("{} -- {}", trader.goods[0], trader.goods[index]);
-            trader.update_all_prices(); 
-            trader.print_prices();      
-        } else { panic!("{:?}", string); }
-    } else { panic!("Market error"); }
+}
+
+fn generate_qty(trader: &ZSE_Trader, m: &Rc<RefCell<dyn Market>>, g: GoodKind) -> f32{ 
+    let mut qty = rand::thread_rng().gen_range(1.0 ..200.0);
+    let check = m.borrow_mut().get_goods();
+
+    for x in check.iter(){ // check for InsufficientGoodQuantityAvailable - lockbuy
+        if x.good_kind == g && x.quantity < qty {
+            qty = x.quantity; 
+        }
+    }
+    qty
 }
