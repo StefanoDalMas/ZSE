@@ -52,7 +52,7 @@ fn main() {
     
     let mut count = 0;
     while trader.get_qty_euro_trader() > 50.0 { //num messo a caso per adesso
-        trader.tentativo_1(count);
+        trader.strat_1(count);
         count += 1;
     }
     println!();

@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::error::Error;
 use std::fmt::Debug;
 use std::rc::Rc;
 
@@ -9,7 +10,7 @@ use BVC::BVCMarket;
 
 use unitn_market_2022::good::{good::Good, good_kind::GoodKind};
 use unitn_market_2022::market::{Market, LockBuyError, LockSellError, BuyError};
-use unitn_market_2022::subscribe_each_other;
+use unitn_market_2022::{subscribe_each_other, wait_one_day};
 
 const STARTING_CAPITAL: f32 = 100000.0; //decidere noi, messa a caso
 pub struct ZSE_Trader {
@@ -17,7 +18,8 @@ pub struct ZSE_Trader {
     markets: Vec<Rc<RefCell<dyn Market>>>,
     prices: Vec<Vec<Vec<f32>>>, //prices of markets
     goods: Vec<Good>, //goods of the trader
-    //vec di goods e penso anche dei prezzi per fare cose
+    token_buy: Vec<(String, Rc<RefCell<dyn Market>>, GoodKind, f32)>,
+    //vec dei prezzi per vendere ai mercati (?)
 }
 #[derive(Debug,Clone)]
 enum Mode {
@@ -71,21 +73,17 @@ impl ZSE_Trader {
             Good::new(GoodKind::YEN, 0.0), 
             Good::new(GoodKind::YUAN, 0.0),
         ];
-        
-        Self { name, markets, prices , goods }
+        let token_buy = Vec::new();
+        Self { name, markets, prices, goods, token_buy }
     }
 
-    pub fn get_name(&self) -> &String {
-        &self.name
-    }
+    pub fn get_name(&self) -> &String { &self.name }
 
-    pub fn get_markets(&self) -> &Vec<Rc<RefCell<dyn Market>>> {
-        &self.markets
-    }
+    pub fn get_markets(&self) -> &Vec<Rc<RefCell<dyn Market>>> { &self.markets }
 
-    pub fn get_prices(&self) -> &Vec<Vec<Vec<f32>>> {
-        &self.prices
-    }
+    pub fn len_token_buy(&self) -> usize { self.token_buy.len() }
+
+    pub fn get_prices(&self) -> &Vec<Vec<Vec<f32>>> { &self.prices }
 
     pub fn update_all_prices(&mut self) {
         for m in &self.markets {
@@ -125,8 +123,33 @@ impl ZSE_Trader {
         }
     }
     
-    pub fn tentativo_1(&mut self, x: i32){
-        try_lock_and_buy(self, x);
+    pub fn strat_1(&mut self, x: i32){
+        let index_gk = rand::thread_rng().gen_range(0..18)%3+1; //chose randomly between USD, YEN, YUAN 
+        let g = get_goodkind_by_index(&index_gk);
+        /*let mut method = || -> Vec<Value>{
+                if count%2==0{ find_min_price(self, Mode::Buy, index) }
+                else if count%3==1 { find_max_price(self, Mode::Buy, index) } 
+                else { find_mid_price(self, Mode::Buy, index) }
+            }; */ 
+        let want_buy = if x%3==0{ find_min_price(self, Mode::Buy, index_gk) }
+                                else if x%3==1 { find_max_price(self, Mode::Buy, index_gk) } 
+                                else { find_mid_price(self, Mode::Buy, index_gk) };
+        
+        let m = &self.markets[get_index_by_market(&want_buy.market)].clone();
+        let qty_to_buy =  generate_qty(m, g);
+
+        if self.len_token_buy()>1 { //wait 'til we have 2 lock_buy and then buy both
+            while self.len_token_buy() > 0 {
+                try_buy(self); 
+            }
+        } else { 
+            let wait = try_lock_buy(self, m, g, qty_to_buy);
+            if wait == false{  wait_one_day!(self.get_markets()[0], self.get_markets()[1], self.get_markets()[2]); }
+        }
+        
+        // try_lock_buy(self, m, g, qty_to_buy);
+        // if self.len_token_buy()>0 { try_buy(self, index, g, qty_to_buy); } //buy only if i can and have no error
+        
     }
    
     pub fn get_qty_euro_trader(&mut self) -> f32{
@@ -235,67 +258,51 @@ fn find_mid_price(t: &mut ZSE_Trader, mode: Mode, gk: usize) -> Value {
     price_market
 }
 
-fn try_lock_and_buy(trader: &mut ZSE_Trader, count: i32) { 
-    let index = rand::thread_rng().gen_range(0..18)%3+1; //chose randomly between USD, YEN, YUAN 
-    let g = get_goodkind_by_index(&index);
-
-    /*let mut method = || -> Vec<Value>{
-        if count%2==0{ find_min_price(self, Mode::Buy, index) }
-        else if count%3==1 { find_max_price(self, Mode::Buy, index) } 
-        else { find_mid_price(self, Mode::Buy, index) }
-    }; */ 
-    //let want_buy = method();
-    let want_buy = if count%3==0{ find_min_price(trader, Mode::Buy, index) }
-                                else if count%3==1 { find_max_price(trader, Mode::Buy, index) } 
-                                else { find_mid_price(trader, Mode::Buy, index) };
-    //let want_buy = Value{ val: self.prices[0][2][index], market: "BVC".to_string() };
-    
-    println!("{} -> {:?}", g, want_buy);
-    
-    let m = &trader.markets[get_index_by_market(&want_buy.market)];
-    let string: Result<String, LockBuyError>;
+fn try_lock_buy(trader: &mut ZSE_Trader, market: &Rc<RefCell<dyn Market>>, gk: GoodKind, qty: f32) -> bool{ 
+    let string: Result<String, LockBuyError>; //token
     let offer: f32;
-    let qty =  generate_qty(&trader, m, g);
-    let buy: Result<Good, BuyError>;
-
-    if qty > 0.0{
-        let min_bid_offer = m.borrow_mut().get_buy_price(g, qty);
-        if min_bid_offer.is_ok(){
-            
-            offer = min_bid_offer.clone().unwrap() + 0.8293 ;
-            if offer > trader.goods[0].get_qty(){ //check for InsufficientGoodQuantity - buy
-
-                return; //CANNOT AFFORD
-            }
-        
-            string = m.borrow_mut().lock_buy(g, qty, offer, trader.get_name().clone());
-            
-            if let Ok(token) = string {
-                buy = m.borrow_mut().buy(token, &mut trader.goods[0]);
-                let res = trader.goods[index].merge(Good::new(g, qty));
-                
-                if res.is_err(){ panic!("Error: {:?}", res); }
-                
-                println!("buy {:?} : {:?}", g, buy);
-                println!("{} -- {}\n", trader.goods[0], trader.goods[index]);
-                trader.update_all_prices(); 
-                //trader.print_prices();     
-
-            } else { panic!("{:?}", string); }
-
-        } else { panic!("Market error: {:?}", min_bid_offer); }
-    }
     
+    if qty > 0.0{
+        let min_bid_offer = market.borrow_mut().get_buy_price(gk, qty);
+        if min_bid_offer.is_ok(){  
+            offer = min_bid_offer.clone().unwrap() + 0.8293 ;
+            if offer > trader.goods[0].get_qty(){ //check to prevent InsufficientGoodQuantity - buy
+                return false; //CANNOT AFFORD
+            }
+            string = market.borrow_mut().lock_buy(gk, qty, offer, trader.get_name().clone());
+            if let Ok(token) = string { 
+                println!("want to buy: {} -> {:?}", gk, market.borrow_mut().get_name());
+                trader.token_buy.push((token, market.clone(), gk, qty)); 
+            } else { panic!("{:?}", string); }
+        } else { panic!("Market error: {:?}", min_bid_offer); }
+        true
+    } else {
+        false
+    }
 }
 
-fn generate_qty(trader: &ZSE_Trader, m: &Rc<RefCell<dyn Market>>, g: GoodKind) -> f32{ 
-    let mut qty = rand::thread_rng().gen_range(1.0 ..200.0);
-    let check = m.borrow_mut().get_goods();
+fn try_buy(trader: &mut ZSE_Trader){
+    let token = trader.token_buy[0].0.clone();
+    let market = trader.token_buy[0].1.clone();
+    let gk = trader.token_buy[0].2;
+    let qty = trader.token_buy[0].3;
 
-    for x in check.iter(){ // check for InsufficientGoodQuantityAvailable - lockbuy
-        if x.good_kind == g && x.quantity < qty {
-            qty = x.quantity; 
-        }
+    let buy = market.borrow_mut().buy(token, &mut trader.goods[0]);
+    if buy.is_err(){ panic!("Buy Error: {:?}", buy); }
+    let res = trader.goods[get_index_by_goodkind(&gk)].merge(Good::new(gk, qty));
+    if res.is_err(){ panic!("Merge Error: {:?}", res); }
+                
+    print!("buy {:?} with {}: {:?}\t", gk, market.borrow_mut().get_name(), buy);
+    println!("{} -- {}\n", trader.goods[0], trader.goods[get_index_by_goodkind(&gk)]);
+    trader.update_all_prices(); 
+    trader.token_buy.remove(0);
+}
+
+fn generate_qty(market: &Rc<RefCell<dyn Market>>, gk: GoodKind) -> f32{ 
+    let mut qty = rand::thread_rng().gen_range(1.0 ..200.0);
+    let check = market.borrow_mut().get_goods();
+    for x in check.iter(){ // check to prevent InsufficientGoodQuantityAvailable - lockbuy
+        if x.good_kind == gk && x.quantity < qty { qty = x.quantity; }
     }
     qty
 }
