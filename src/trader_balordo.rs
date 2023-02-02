@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::error::Error;
 use std::fmt::Debug;
@@ -12,6 +13,8 @@ use unitn_market_2022::good::{good::Good, good_kind::GoodKind};
 use unitn_market_2022::market::{Market, LockBuyError, LockSellError, BuyError};
 use unitn_market_2022::{subscribe_each_other, wait_one_day};
 use unitn_market_2022::good::consts::{DEFAULT_EUR_USD_EXCHANGE_RATE, DEFAULT_EUR_YEN_EXCHANGE_RATE, DEFAULT_EUR_YUAN_EXCHANGE_RATE};
+
+const WINDOW_SIZE: i32 = 10; // min BFB
 
 pub struct ZSE_Trader {
     name: String,
@@ -30,11 +33,12 @@ enum Mode {
 struct Lock {
     token: String,
     mode: Mode,
-    market: Rc<RefCell<dyn Market>>,
+    market: String,
     deadline: u32,
     good_kind: GoodKind,
     price: f32,
     quantity: f32,
+    priority: u32,
 }
 
 #[derive(Clone)]
@@ -72,7 +76,9 @@ impl ZSE_Trader {
             Good::new(GoodKind::YUAN, tmp[3]),
         ];
 
-        let best_prices = vec![vec![BestPrice{ price: 0.0, quantity: 0.0, market: "".to_string() }; 4]; 2];
+        let mut best_prices = vec![vec![BestPrice{ price: 0.0, quantity: 0.0, market: "".to_string() }; 4]; 2];
+        best_prices[0] = vec![BestPrice{ price: 1000000.0, quantity: 0.0, market: "".to_string() }; 4];
+        best_prices[1] = vec![BestPrice{ price: -1000000.0, quantity: 0.0, market: "".to_string() }; 4];
         let locks = Vec::new();
 
         Self { name, markets, prices, best_prices, goods, locks }
@@ -86,7 +92,7 @@ impl ZSE_Trader {
 
     pub fn get_budget(&self) -> f32 { self.goods.iter().map(|good| convert_to_eur(good)).sum() }
 
-    pub fn update_all_prices(&mut self) {
+    fn update_all_prices(&mut self) {
         for m in &self.markets {
             let index = get_index_by_market(m.borrow_mut().get_name());
             let goods = m.borrow_mut().get_goods();
@@ -100,9 +106,6 @@ impl ZSE_Trader {
     }
 
     fn update_best_prices(&mut self) {
-        self.best_prices[0] = vec![BestPrice{ price: 1000000.0, quantity: 0.0, market: "".to_string() }; 4];
-        self.best_prices[1] = vec![BestPrice{ price: -1000000.0, quantity: 0.0, market: "".to_string() }; 4];
-
         for mode in 0..2 {
             for good in 1..4 {
                 for market in 0..3 {
@@ -128,11 +131,104 @@ impl ZSE_Trader {
         }
     }
 
+    fn locked_quantity(&self, good_kind: GoodKind) -> f32 {
+        let mut locked = 0.0;
+        for lock in &self.locks {
+            if lock.good_kind == good_kind {
+                locked += lock.quantity;
+            }
+        }
+        locked
+    }
+
     // Locking logic
+    fn lock_best_profit(&mut self) {
+        let mut best = BestPrice{ price: 0.0, quantity: 0.0, market: "".to_string() };
 
+        for mode in 0..2 {
+            for good in 1..4 {
+                if mode == 0 {
+                    for lock in self.locks {
+                        if lock.mode == Mode::Sell {
+                            let ppu = lock.price / lock.quantity;
+                            if ppu > best.price {
+                                best.price = ppu;
+                                best.quantity = lock.quantity;
+                                best.market = lock.market;
+                            }
+                        }
+                    }
+                    let ppu = self.best_prices[1][good].price / self.best_prices[1][good].quantity;
+                    if ppu < best.price {
+                        best.price = ppu;
+                        best.quantity = self.best_prices[1][good].quantity;
+                        best.market = self.best_prices[1][good].market.clone();
+                    }
+                } else {
+                    for lock in self.locks {
+                        if lock.mode == Mode::Buy {
+                            let ppu = lock.price / lock.quantity;
+                            if ppu > best.price {
+                                best.price = ppu;
+                                best.quantity = lock.quantity;
+                                best.market = lock.market;
+                            }
+                        }
+                    }
+                    let ppu = self.best_prices[0][good].price / self.best_prices[0][good].quantity;
+                    if ppu > best.price {
+                        best.price = ppu;
+                        best.quantity = self.best_prices[0][good].quantity;
+                        best.market = self.best_prices[0][good].market.clone();
+                    }
+                }
+            }
+        }
 
+        //Fare lock effettiva
+        //Mettere deadline in base al mercato
+        // BFB = 10
+        // RCNZ = 15
+        // BVC = 12
+    }
 
     // HRRN implementation
+    fn HRRN(&mut self) {
+        let mut lock = &self.locks[0];
+
+        for i in 1..self.locks.len() {
+            if self.locks[i].priority > lock.priority {
+                lock = &self.locks[i];
+            }
+        }
+
+        match lock.mode {
+            Mode::Buy => {
+                // Esegui acquisto
+            },
+            Mode::Sell => {
+                // Esegui vendita
+            },
+        }
+    }
+
+    pub fn trade(&mut self) {
+        use rand::Rng;
+
+        let mut alpha = 0.0;
+        let mut bankrupt: bool = false;
+
+        while(!bankrupt) {
+            self.update_all_prices();
+            alpha = self.locks.len() as f32 / WINDOW_SIZE as f32;
+            if rand::thread_rng().gen_range(0.0, 100.0) < alpha {
+                self.HRRN();
+            } else {
+                self.lock_best_profit();
+            }
+            bankrupt = if self.get_budget() < 0.0 { true } else { false };
+        }
+    }
 
     // Prints for debug
     pub fn print_best_prices(&self) {
