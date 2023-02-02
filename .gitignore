@@ -1,3 +1,7 @@
 /target
 .cargo/
 /log_ZSE.txt
+/log_bfb.txt
+/log_BVC.txt
+/log_RCNZ.txt
+
