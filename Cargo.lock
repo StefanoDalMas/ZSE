@@ -4,9 +4,9 @@ version = 3
 
 [[package]]
 name = "BVC"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+git://advancedprogramming.disi.unitn.it/index"
-checksum = "e49533bca9032b427a1980966960aacee11e094e1470945501e812eb740e804e"
+checksum = "0802146329defe1cd073336e5d720b24f7df536d78491ca636231b331138ab35"
 dependencies = [
  "chrono",
  "rand 0.7.3",
