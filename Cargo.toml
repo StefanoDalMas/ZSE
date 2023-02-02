@@ -17,4 +17,4 @@ chrono = "0.4.23"
 
 rcnz_market = {version = "0.1.0", registry = "kellnr"}
 bfb = {version = "0.1.2", registry = "kellnr"}
-BVC = {version = "0.1.8", registry = "kellnr"}
+BVC = {version = "0.1.9", registry = "kellnr"}
