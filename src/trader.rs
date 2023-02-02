@@ -147,7 +147,7 @@ impl ZSE_Trader {
         self.goods[i].get_qty()
     }
 
-    pub fn strat_1(&mut self, x: i32){
+    pub fn strat1(&mut self, x: i32){
         let mut information = Data::new();
         let mut jump = false;
 
