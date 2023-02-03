@@ -1,7 +1,4 @@
-use std::borrow::Borrow;
 use std::cell::RefCell;
-use std::error::Error;
-use std::fmt::Debug;
 use std::rc::Rc;
 use rand::Rng;
 
@@ -92,10 +89,10 @@ impl ZSE_Trader {
 
     pub fn get_budget(&self) -> f32 { self.goods.iter().map(|good| convert_to_eur(good)).sum() }
 
-    fn update_all_prices(&mut self) {
+    pub fn update_all_prices(&mut self) {
         for m in &self.markets {
-            let index = get_index_by_market(m.borrow_mut().get_name());
-            let goods = m.borrow_mut().get_goods();
+            let index = get_index_by_market(m.borrow().get_name());
+            let goods = m.borrow().get_goods();
             for g in goods {
                 let index_kind = get_index_by_goodkind(&g.good_kind);
                 self.prices[0][index][index_kind] = g.exchange_rate_buy;
@@ -110,20 +107,16 @@ impl ZSE_Trader {
             for good in 1..4 {
                 for market in 0..3 {
                     for qty in [10.0, 50.0, 100.0] {
+                        let mut unit_price;
                         if mode == 0 {
-                            let unit_price = self.markets[market].borrow().get_buy_price(get_goodkind_by_index(good), qty).unwrap() / qty;
-                            if unit_price < self.best_prices[mode][good].price {
-                                self.best_prices[mode][good].price = unit_price;
-                                self.best_prices[mode][good].quantity = qty;
-                                self.best_prices[mode][good].market = self.markets[market].borrow().get_name().to_string();
-                            }
+                            unit_price = self.markets[market].borrow().get_buy_price(get_goodkind_by_index(good), qty).unwrap() / qty;
                         } else {
-                            let unit_price = self.markets[market].borrow().get_sell_price(get_goodkind_by_index(good), qty).unwrap() / qty;
-                            if unit_price > self.best_prices[mode][good].price {
-                                self.best_prices[mode][good].price = unit_price;
-                                self.best_prices[mode][good].quantity = qty;
-                                self.best_prices[mode][good].market = self.markets[market].borrow().get_name().to_string();
-                            }
+                            unit_price = self.markets[market].borrow().get_sell_price(get_goodkind_by_index(good), qty).unwrap() / qty;
+                        }
+                        if (mode == 0 && unit_price < self.best_prices[mode][good].price) || (mode == 1 && unit_price > self.best_prices[mode][good].price) {
+                            self.best_prices[mode][good].price = unit_price;
+                            self.best_prices[mode][good].quantity = qty;
+                            self.best_prices[mode][good].market = self.markets[market].borrow().get_name().to_string();
                         }
                     }
                 }
@@ -143,46 +136,46 @@ impl ZSE_Trader {
 
     // Locking logic
     fn lock_best_profit(&mut self) {
-        let mut best = BestPrice{ price: 0.0, quantity: 0.0, market: "".to_string() };
+        let mut best_buy = (BestPrice { price: 1000000.0, quantity: 0.0, market: "".to_string() }, 0);
+        let mut best_sell = (BestPrice { price: -1000000.0, quantity: 0.0, market: "".to_string() }, 0);
 
         for mode in 0..2 {
             for good in 1..4 {
-                if mode == 0 {
-                    for lock in self.locks {
-                        if lock.mode == Mode::Sell {
-                            let ppu = lock.price / lock.quantity;
-                            if ppu > best.price {
-                                best.price = ppu;
-                                best.quantity = lock.quantity;
-                                best.market = lock.market;
-                            }
-                        }
+                if mode == 0 && self.best_prices[mode][good].price < best_buy.price {
+                    best_buy = (self.best_prices[mode][good].clone(), good);
+                } else if mode == 1 && self.best_prices[mode][good].price > best_sell.price {
+                    best_sell = (self.best_prices[mode][good].clone(), good);
+                }
+            }
+        }
+
+        // Choose which to lock between best_buy or best_sell
+        let cost_buy = best_buy.0.price * best_buy.0.quantity;
+        let cost_sell = best_sell.0.price * best_sell.0.quantity;
+        let mut profit_buy = ((self.best_prices[1][best_buy.1].price * self.best_prices[1][best_buy.1].quantity) - cost_buy, "to_lock");
+        let mut profit_sell = ((cost_sell - self.best_prices[0][best_buy.1].price * self.best_prices[0][best_buy.1].quantity), "to_lock");
+
+        for lock in &self.locks {
+            let lock_cost = lock.price * lock.quantity;
+            match lock.mode {
+                Mode::Sell => {
+                    if lock.good_kind == get_goodkind_by_index(best_buy.1) && (lock_cost - cost_buy) > profit_buy.0 {
+                        profit_buy = (lock_cost - cost_buy, "locked");
                     }
-                    let ppu = self.best_prices[1][good].price / self.best_prices[1][good].quantity;
-                    if ppu < best.price {
-                        best.price = ppu;
-                        best.quantity = self.best_prices[1][good].quantity;
-                        best.market = self.best_prices[1][good].market.clone();
-                    }
-                } else {
-                    for lock in self.locks {
-                        if lock.mode == Mode::Buy {
-                            let ppu = lock.price / lock.quantity;
-                            if ppu > best.price {
-                                best.price = ppu;
-                                best.quantity = lock.quantity;
-                                best.market = lock.market;
-                            }
-                        }
-                    }
-                    let ppu = self.best_prices[0][good].price / self.best_prices[0][good].quantity;
-                    if ppu > best.price {
-                        best.price = ppu;
-                        best.quantity = self.best_prices[0][good].quantity;
-                        best.market = self.best_prices[0][good].market.clone();
+                }
+                Mode::Buy => {
+                    if lock.good_kind == get_goodkind_by_index(best_sell.1) && (cost_sell - lock_cost) > profit_sell.0 {
+                        profit_sell = (cost_sell - lock_cost, "locked");
                     }
                 }
             }
+        }
+
+        if profit_buy.0 > profit_sell.0 {
+            // Lock buy if .1 is "locked"
+            // else if "to_lock", lock best_prices[1][good]
+        } else {
+            // Same logic
         }
 
         //Fare lock effettiva
@@ -213,15 +206,13 @@ impl ZSE_Trader {
     }
 
     pub fn trade(&mut self) {
-        use rand::Rng;
-
         let mut alpha = 0.0;
         let mut bankrupt: bool = false;
 
-        while(!bankrupt) {
+        while !bankrupt {
             self.update_all_prices();
             alpha = self.locks.len() as f32 / WINDOW_SIZE as f32;
-            if rand::thread_rng().gen_range(0.0, 100.0) < alpha {
+            if rand::thread_rng().gen_range(0.0..100.0) < alpha {
                 self.HRRN();
             } else {
                 self.lock_best_profit();
