@@ -12,6 +12,8 @@ use unitn_market_2022::good::{good::Good, good_kind::GoodKind};
 use unitn_market_2022::market::{Market, LockBuyError, LockSellError, BuyError};
 use unitn_market_2022::{subscribe_each_other, wait_one_day};
 
+use crate::market::ZSE;
+
 const STARTING_CAPITAL: f32 = 100000.0; //decidere noi, messa a caso
 pub struct ZSE_Trader {
     name: String,
@@ -83,7 +85,7 @@ impl ZSE_Trader {
         let mut markets = Vec::new();
         markets.push(RCNZ::new_random());
         markets.push(Bfb::new_random());
-        markets.push(BVCMarket::new_random());
+        markets.push(ZSE::new_random());
         subscribe_each_other!(markets[0], markets[1], markets[2]);
         let prices = vec![vec![vec![0.0; 4]; 3]; 2];
         let goods = vec![
@@ -325,7 +327,7 @@ impl ZSE_Trader {
         if qty > 0.0{
             string = market.borrow_mut().lock_sell(gk, qty, offer, self.get_name().clone());
             if let Ok(token) = string { 
-                println!("want to sell: {} -> {:?}; {}", gk, market.borrow_mut().get_name(), offer);
+                println!("want to sell: {} -> {:?}; {} for {}", gk, market.borrow_mut().get_name(), qty, offer);
                 let new_qty_euro = self.goods[0].get_qty() + offer;
                 let new_qty_gk_sell =  self.goods[get_index_by_goodkind(&gk)].get_qty() - qty;
                 self.token_sell.push((token, market.clone(), gk, qty, new_qty_euro, new_qty_gk_sell));
@@ -390,7 +392,7 @@ fn get_index_by_market(m: &str) -> usize {
         "RCNZ" => 0,
         "Baku stock exchange" => 1,
         "BFB" => 1,
-        "BVC" => 2,
+        "ZSE" => 2,
         _ => panic!("Market not found"),
     }
 }
@@ -399,7 +401,7 @@ fn get_name_market(n: usize) -> String{
     let name = match n {
         0 => "RCNZ".to_string(),
         1 => "BFB".to_string(),
-        2 => "BVC".to_string(),
+        2 => "ZSE".to_string(),
         _ => panic!("Error in print_prices"),
     };
     name

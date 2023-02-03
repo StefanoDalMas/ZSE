@@ -391,7 +391,7 @@ impl Market for ZSE {
             print_metadata(logcode);
             return Err(LockSellError::MaxAllowedLocksReached);
         }
-        if self.goods[0].get_qty() < offer {
+        if (self.goods[0].get_qty() - self.locked_qty[0]) < offer {
             print_metadata(logcode);
             return Err(LockSellError::InsufficientDefaultGoodQuantityAvailable { offered_good_kind: kind_to_sell, offered_good_quantity: offer, available_good_quantity: self.goods[0].get_qty() });
         }

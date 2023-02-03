@@ -3,9 +3,9 @@ use std::hash::{Hash, Hasher};
 use unitn_market_2022::market::{Market, market_test};
 
 use sha256::digest;
-
+use unitn_market_2022::event::event::{Event, EventKind};
 pub mod market;
-mod trader;
+
 
 #[derive(Hash)]
 struct Request_good{
@@ -15,7 +15,7 @@ struct Request_good{
     name:String,
 }
 fn main() {
-    /*
+    
     println!("Init market");
     let mut market = market::ZSE::new_random();
     println!("{}", market.borrow().get_budget());
@@ -36,28 +36,7 @@ fn main() {
     let _ = market.borrow_mut().sell(y.unwrap(), &mut unitn_market_2022::good::good::Good::new(unitn_market_2022::good::good_kind::GoodKind::USD, 102.0));
     println!("{}", market.borrow().get_budget());
     println!("{:?}", market.borrow().get_goods());
-     */
-
-    let mut trader = trader::ZSE_Trader::new();
-    println!("{}", trader.get_name());
-    for market in trader.get_markets() {
-        println!("\n{}", market.borrow().get_name());
-        println!("{}", market.borrow().get_budget());
-        println!("{:?}", market.borrow().get_goods());
-    }
-
-    trader.update_all_prices();
-    trader.print_prices();
-    println!();
     
-    let mut count = 0;
-    //while trader.get_qty_euro_trader() > 50.0 { //num messo a caso 
-    for _ in 0..100{
-        trader.strat_1(count);
-        count += 1;
-    }
-    println!();
-    trader.print_goods_trader();
 }
 
 pub enum GK {
