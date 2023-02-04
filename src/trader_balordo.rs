@@ -7,7 +7,7 @@ use bfb::bfb_market::Bfb;
 use BVC::BVCMarket;
 
 use unitn_market_2022::good::{good::Good, good_kind::GoodKind};
-use unitn_market_2022::market::{Market, LockBuyError, LockSellError, BuyError};
+use unitn_market_2022::market::{Market, LockBuyError, LockSellError, BuyError, SellError};
 use unitn_market_2022::{subscribe_each_other, wait_one_day};
 use unitn_market_2022::good::consts::{DEFAULT_EUR_USD_EXCHANGE_RATE, DEFAULT_EUR_YEN_EXCHANGE_RATE, DEFAULT_EUR_YUAN_EXCHANGE_RATE};
 
@@ -134,6 +134,76 @@ impl ZSE_Trader {
         locked
     }
 
+    // Buy & Sell Lock functions
+    fn lock_buy(&mut self, mut lock: Lock) -> bool {
+        let res = self.markets[get_index_by_market(&*lock.market)].borrow_mut().lock_buy(lock.good_kind, lock.quantity, lock.price * lock.quantity, "ZSE".to_string());
+        match res {
+            Ok(str) => {
+                lock.token = str;
+                true
+            }
+            Err(err) => {
+                match err {
+                    LockBuyError::BidTooLow { requested_good_kind: kind, requested_good_quantity: qty, low_bid: bid, lowest_acceptable_bid: minimum } => {
+                        lock.price = minimum / qty;
+                        self.lock_buy(lock)
+                    }
+                    _ => { false }
+                }
+            }
+        }
+    }
+
+    fn lock_sell(&mut self, mut lock: Lock) -> bool {
+        let res = self.markets[get_index_by_market(&*lock.market)].borrow_mut().lock_sell(lock.good_kind, lock.quantity, lock.price * lock.quantity, "ZSE".to_string());
+        match res {
+            Ok(str) => {
+                lock.token = str;
+                true
+            }
+            Err(err) => {
+                match err {
+                    LockSellError::OfferTooHigh { offered_good_kind: kind, offered_good_quantity: qty, high_offer: offer, highest_acceptable_offer: maximum } => {
+                        lock.price = maximum / qty;
+                        self.lock_buy(lock)
+                    }
+                    _ => { false }
+                }
+            }
+        }
+    }
+
+    // Buy & Sell functions
+    fn buy(&mut self, mut lock: Lock) {
+        let res = self.markets[get_index_by_market(&*lock.market)].borrow_mut().buy(lock.token, &mut self.goods[0]);
+        match res {
+            Ok(good) => {
+                self.goods[get_index_by_goodkind(&lock.good_kind)].merge(good).expect("Merge error in buy function");
+            }
+            Err(err) => {
+                match err {
+                    BuyError::InsufficientGoodQuantity { .. } => { println!("Not enough money to buy!"); }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn sell(&mut self, mut lock: Lock) {
+        let res = self.markets[get_index_by_market(&*lock.market)].borrow_mut().sell(lock.token, &mut self.goods[get_index_by_goodkind(&lock.good_kind)]);
+        match res {
+            Ok(good) => {
+                self.goods[0].merge(good).expect("Merge error in sell function");
+            }
+            Err(err) => {
+                match err {
+                    SellError::InsufficientGoodQuantity { .. } => { println!("Not enough {} to sell!", lock.good_kind); }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     // Locking logic
     fn lock_best_profit(&mut self) {
         let mut best_buy = (BestPrice { price: 1000000.0, quantity: 0.0, market: "".to_string() }, 0);
@@ -141,15 +211,15 @@ impl ZSE_Trader {
 
         for mode in 0..2 {
             for good in 1..4 {
-                if mode == 0 && self.best_prices[mode][good].price < best_buy.price {
+                if mode == 0 && self.best_prices[mode][good].price < best_buy.0.price {
                     best_buy = (self.best_prices[mode][good].clone(), good);
-                } else if mode == 1 && self.best_prices[mode][good].price > best_sell.price {
+                } else if mode == 1 && self.best_prices[mode][good].price > best_sell.0.price {
                     best_sell = (self.best_prices[mode][good].clone(), good);
                 }
             }
         }
 
-        // Choose which to lock between best_buy or best_sell
+        // Calculate profit for best_buy and best_sell
         let cost_buy = best_buy.0.price * best_buy.0.quantity;
         let cost_sell = best_sell.0.price * best_sell.0.quantity;
         let mut profit_buy = ((self.best_prices[1][best_buy.1].price * self.best_prices[1][best_buy.1].quantity) - cost_buy, "to_lock");
@@ -171,18 +241,48 @@ impl ZSE_Trader {
             }
         }
 
-        if profit_buy.0 > profit_sell.0 {
-            // Lock buy if .1 is "locked"
-            // else if "to_lock", lock best_prices[1][good]
-        } else {
-            // Same logic
+        let mut new_lock = Lock {
+            token: "".to_string(),
+            mode: Mode::Buy,
+            market: "".to_string(),
+            deadline: 0,
+            good_kind: GoodKind::EUR,
+            price: 0.0,
+            quantity: 0.0,
+            priority: 0,
+        };
+        // Choose which to lock between best_buy or best_sell
+        let mut best_profit = profit_buy;
+        let mut best = best_buy;
+        if profit_buy.0 < profit_sell.0 {
+            best_profit = profit_sell;
+            best = best_sell;
+            new_lock.mode = Mode::Sell;
+        }
+        new_lock.market = best.0.market.clone();
+        new_lock.deadline = get_deadline_by_market(&new_lock.market);
+        new_lock.good_kind = get_goodkind_by_index(best.1);
+        new_lock.price = best.0.price;
+        new_lock.quantity = best.0.quantity;
+
+        if best_profit.1 == "to_lock" {
+            if new_lock.mode == Mode::Buy { new_lock.mode = Mode::Sell; }
+            if new_lock.mode == Mode::Sell { new_lock.mode = Mode::Buy; }
+            // Rivedi quale lock fare porcamadonna
+            // quale market, good è quello di best_price?
+            // aggiorna price e quantity
         }
 
-        //Fare lock effettiva
-        //Mettere deadline in base al mercato
-        // BFB = 10
-        // RCNZ = 15
-        // BVC = 12
+        match new_lock.mode {
+            Mode::Buy => {
+                if self.lock_buy(new_lock) { self.locks.add(new_lock.clone()); }
+                else { wait_one_day!(); }
+            }
+            Mode::Sell => {
+                if self.lock_sell(new_lock) { self.locks.add(new_lock.clone()); }
+                else { wait_one_day!(); }
+            }
+        }
     }
 
     // HRRN implementation
@@ -275,6 +375,16 @@ fn get_market_name(n: usize) -> String{
         _ => panic!("Error in print_prices"),
     };
     name
+}
+
+fn get_deadline_by_market(m: &str) -> u32 {
+    match m {
+        "RCNZ" => 15,
+        "Baku stock exchange" => 10,
+        "BFB" => 10,
+        "BVC" => 12,
+        _ => panic!("Market not found"),
+    }
 }
 
 fn get_index_by_goodkind(kind: &GoodKind) -> usize {
