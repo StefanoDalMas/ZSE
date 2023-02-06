@@ -15,6 +15,7 @@ struct Request_good{
     offer: String,
     name:String,
 }
+
 fn main() {
     /* 
     println!("Init market");
@@ -49,7 +50,6 @@ fn main() {
     trader.update_all_prices();
     trader.print_prices();
     println!();
-    
     let mut count = 0;
     //while trader.get_qty_euro_trader() > 50.0 { //num messo a caso 
     for _ in 0..100{
@@ -58,7 +58,7 @@ fn main() {
     }
     println!();
     trader.print_goods_trader();
-
+    trader.print_data();
 }
 
 pub enum GK {

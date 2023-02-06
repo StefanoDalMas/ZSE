@@ -20,6 +20,7 @@ pub struct ZSE_Trader {
     goods: Vec<Good>, //goods of the trader
     token_buy: Vec<Locking>,
     token_sell: Vec<Locking>,
+    information: Data,
 }
 #[derive(Debug,Clone)]
 enum Mode {
@@ -32,8 +33,6 @@ enum Bazaar {
     Bfb,
     BVC,
 }
-
-
 pub struct Locking{ //keep info about tokens and locks that trader does
     token: String,
     market: Rc<RefCell<dyn Market>>,
@@ -42,7 +41,19 @@ pub struct Locking{ //keep info about tokens and locks that trader does
     new_qty_euro: f32,
     new_qty_gk: f32,
 }
-impl Locking {
+
+#[derive(Debug, Clone, Copy)]
+struct Data{ //general info
+    lock_buy: i32,
+    lock_sell: i32,
+    buy: i32,
+    sell: i32,
+    wait: i32,
+}
+impl Data{
+    fn new() -> Data{
+        Data{ lock_buy: 0, lock_sell: 0, buy: 0, sell: 0, wait: 0 }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -70,20 +81,6 @@ impl PartialOrd for Value{
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Data{ //general info
-    lock_buy: i32,
-    lock_sell: i32,
-    buy: i32,
-    sell: i32,
-    wait: i32,
-}
-impl Data{
-    fn new() -> Data{
-        Data{ lock_buy: 0, lock_sell: 0, buy: 0, sell: 0, wait: 0 }
-    }
-}
-
 impl ZSE_Trader {
     pub fn new() -> Self {
         let name = "ZSE_Trader".to_string();
@@ -101,7 +98,8 @@ impl ZSE_Trader {
         ];
         let token_buy = Vec::new();
         let token_sell = Vec::new();
-        Self { name, markets, prices, goods, token_buy, token_sell }
+        let information = Data::new();
+        Self { name, markets, prices, goods, token_buy, token_sell, information}
     }
 
     pub fn get_name(&self) -> &String { &self.name }
@@ -148,12 +146,14 @@ impl ZSE_Trader {
         for g in &self.goods{
             println!("{:?} ", g );
         }
+        println!();
     }
+
+    pub fn print_data(&self){ println!("{:?}", self.information); }
 
     pub fn get_qty_good_trader(&mut self, i: usize) -> f32{ self.goods[i].get_qty() }
 
     pub fn strat1(&mut self, x: i32){
-        let mut information = Data::new();
         let mut jump = false;
 
         let index_gk_buy = rand::thread_rng().gen_range(0..18)%3+1; //chose randomly between USD, YEN, YUAN 
@@ -171,26 +171,27 @@ impl ZSE_Trader {
             if min_bid_offer.is_ok(){
                 offer = min_bid_offer.clone().unwrap() + 0.8293 ;
                 let last_lock = self.len_token_buy();
-                if last_lock>0 && offer > self.token_buy[last_lock-1].new_qty_euro{ //seeing that i want to do 2 lock and buy in the future
-                    self.wait(information); //CANNOT AFFORD
+                if offer <=0.0 || (last_lock>0 && offer > self.token_buy[last_lock-1].new_qty_euro){ //seeing that i want to do 2 lock and buy in the future
+                    self.wait(); //CANNOT AFFORD
+                } else {
+                    let wait = self.try_lock_buy(mb, gk_buy, qty_to_buy, offer); 
+                    if wait == false{  //if i cannot do a lock_buy for some reasons (qty or offer) i wait one day
+                        self.wait();
+                    } else { self.information.lock_buy += 1; }
+                    self.update_all_prices(); // in any case i wait or do a lock
                 }
             } else { panic!("Market error: {:?}", min_bid_offer); }
             
-            let wait = self.try_lock_buy(mb, gk_buy, qty_to_buy, offer); 
-            if wait == false{  //if i cannot do a lock_buy for some reasons (qty or offer) i wait one day
-                self.wait(information);
-            } else { information.lock_buy += 1; }
-            self.update_all_prices(); // in any case i wait or do a lock
         } 
         if self.len_token_buy()>1 && jump == false { 
             while self.len_token_buy() > 0 {
                 self.try_buy();
-                information.buy += 1;
+                self.information.buy += 1;
             }
         }
 
         jump = true;
-        if information.buy>0 && information.buy%2==0 && jump { //lock_sell after 2 lock_buy and so buy
+        if self.information.buy>0 && self.information.buy%3==0 && jump { //lock_sell after 2 lock_buy and so buy
             let mut index_gk_sell = rand::thread_rng().gen_range(0..18)%3+1; //chose randomly between USD, YEN, YUAN 
             index_gk_sell = self.check_gk_sell(index_gk_sell); //make sure i can sell that gk 
             let gk_sell = get_goodkind_by_index(&index_gk_sell);
@@ -203,13 +204,15 @@ impl ZSE_Trader {
             if min_offer.is_ok(){
                 offer = min_offer.clone().unwrap() - min_offer.clone().unwrap()/10.0 ;
             } else { panic!("Market error: {:?}", min_offer); }
-            
-            self.try_lock_sell(ms, gk_sell, qty_sell, offer);
-            self.try_sell();
-            information.lock_sell += 1;
-            information.sell += 1;
+            if offer<=0.0 { self.wait(); } 
+            else {
+                self.try_lock_sell(ms, gk_sell, qty_sell, offer);
+                self.try_sell();
+                self.information.lock_sell += 1;
+                self.information.sell += 1;
+            }
         }
-        if jump == false{ self.wait(information); }
+        if jump == false{ self.wait(); }
     }
     
     fn find_min_price(&mut self, mode: Mode, gk: usize) -> Value{
@@ -219,7 +222,7 @@ impl ZSE_Trader {
             Mode::Sell => 1,
         };
         for i in 0..self.prices[x].len(){ //market
-            if self.prices[x][i][gk]>0.0  && price_market.val > self.prices[x][i][gk]{ //nel mentre che RCNZ fixa i prezzi neg
+            if price_market.val > self.prices[x][i][gk]{
                 price_market.val = self.prices[x][i][gk];
                 price_market.market = get_name_market(i);
             } else if price_market.val == self.prices[x][i][gk]{
@@ -361,7 +364,6 @@ impl ZSE_Trader {
                 1
             },
         };
-        println!("MAX {}", max);
         let mut qty = rand::thread_rng().gen_range(0.5 .. max);
         if x == 0{
             let check = market.borrow_mut().get_goods();
@@ -380,12 +382,11 @@ impl ZSE_Trader {
         index
     }
 
-    fn wait(&self, mut info: Data){
+    fn wait(&mut self){
         wait_one_day!(self.get_markets()[0], self.get_markets()[1], self.get_markets()[2]); 
-        info.wait += 1;
+        self.information.wait += 1;
         println!("\nWAITING\n");
     }
-
 }
 
 
