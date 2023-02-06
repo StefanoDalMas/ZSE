@@ -405,9 +405,9 @@ dependencies = [
 
 [[package]]
 name = "rcnz_market"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+git://advancedprogramming.disi.unitn.it/index"
-checksum = "afd66746f3eee34c076a58fac3f759126a4bf9c25937242f7747a01497f99cfd"
+checksum = "d24b611c21833ba79cb2bde5d83c6da91bb4b2f3a77385663e85e2c5fc17a3b6"
 dependencies = [
  "chrono",
  "rand 0.8.5",
