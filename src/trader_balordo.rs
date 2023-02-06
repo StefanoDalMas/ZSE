@@ -391,7 +391,7 @@ impl ZSE_Trader {
             if rand::thread_rng().gen_range(0.0..1.0) < alpha {
                 self.HRRN();
             } else {
-                if thread_rng().gen_range(0.0..1.0) < 0.5 {
+                if thread_rng().gen_range(0.0..1.0) < 0.6 {
                     self.lock_best_profit();
                 } else {
                     self.lock_random();
