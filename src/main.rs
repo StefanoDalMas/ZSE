@@ -51,14 +51,17 @@ fn main() {
     trader.print_prices();
     println!();
     let mut count = 0;
+    let mut state = true;
     //while trader.get_qty_euro_trader() > 50.0 { //num messo a caso 
-    for _ in 0..100{
-        trader.strat1(count);
+    while state{
+        state = trader.strat1(count);
         count += 1;
+        // if trader.count() == 10 { break; }
     }
     println!();
     trader.print_goods_trader();
     trader.print_data();
+    println!("tot cicli: {}", count);
 }
 
 pub enum GK {
