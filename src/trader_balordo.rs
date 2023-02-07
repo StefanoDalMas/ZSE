@@ -12,7 +12,7 @@ use unitn_market_2022::{subscribe_each_other, wait_one_day};
 use unitn_market_2022::good::consts::{DEFAULT_EUR_USD_EXCHANGE_RATE, DEFAULT_EUR_YEN_EXCHANGE_RATE, DEFAULT_EUR_YUAN_EXCHANGE_RATE};
 
 const STARTING_QUANTITY: f32 = 100000.0;
-const WINDOW_SIZE: i32 = 10; // min BFB
+const WINDOW_SIZE: i32 = 5; // 5 * 2 = 10 (min BFB)
 
 pub struct ZSE_Trader {
     name: String,
@@ -20,7 +20,7 @@ pub struct ZSE_Trader {
     prices: Vec<Vec<Vec<f32>>>,
     best_prices: Vec<Vec<BestPrice>>,
     goods: Vec<Good>,
-    locks: Vec<Lock>,
+    transactions: Vec<Transaction>,
 }
 
 #[derive(Clone, Debug)]
@@ -34,11 +34,9 @@ struct Lock {
     token: String,
     mode: Mode,
     market: String,
-    deadline: i32,
     good_kind: GoodKind,
     price: f32,
     quantity: f32,
-    priority: f32,
 }
 
 #[derive(Clone)]
@@ -48,6 +46,13 @@ struct BestPrice {
     market: String
 }
 
+struct Transaction {
+    lock_buy: Lock,
+    lock_sell: Lock,
+    deadline: i32,
+    priority: f32
+}
+
 impl ZSE_Trader {
     pub fn new() -> Self {
         let name = "ZSE_Trader".to_string();
@@ -55,6 +60,9 @@ impl ZSE_Trader {
         markets.push(RCNZ::new_random());
         markets.push(Bfb::new_random());
         markets.push(BVCMarket::new_random());
+        //markets.push(RCNZ::new_with_quantities(STARTING_QUANTITY, STARTING_QUANTITY, STARTING_QUANTITY, STARTING_QUANTITY));
+        //markets.push(Bfb::new_with_quantities(STARTING_QUANTITY, STARTING_QUANTITY, STARTING_QUANTITY, STARTING_QUANTITY));
+        //markets.push(BVCMarket::new_with_quantities(STARTING_QUANTITY, STARTING_QUANTITY, STARTING_QUANTITY, STARTING_QUANTITY));
         subscribe_each_other!(markets[0], markets[1], markets[2]);
         let prices = vec![vec![vec![1.0; 4]; 3]; 2];
 
@@ -79,9 +87,9 @@ impl ZSE_Trader {
         let mut best_prices = vec![vec![BestPrice{ price: 0.0, quantity: 0.0, market: "".to_string() }; 4]; 2];
         best_prices[0] = vec![BestPrice{ price: 1000000.0, quantity: 0.0, market: "".to_string() }; 4];
         best_prices[1] = vec![BestPrice{ price: -1000000.0, quantity: 0.0, market: "".to_string() }; 4];
-        let locks = Vec::new();
+        let transactions = Vec::new();
 
-        Self { name, markets, prices, best_prices, goods, locks }
+        Self { name, markets, prices, best_prices, goods, transactions }
     }
 
     pub fn get_name(&self) -> &String { &self.name }
@@ -134,26 +142,16 @@ impl ZSE_Trader {
     }
 
     fn update_priorities(&mut self) {
-        for lock in &mut self.locks {
-            let cost = lock.price * lock.quantity;
-            let profit = match lock.mode {
-                Mode::Buy => {
-                    convert_goodquantity_to_eur(&lock.good_kind, lock.quantity) - cost
-                }
-                Mode::Sell => {
-                    cost - convert_goodquantity_to_eur(&lock.good_kind, lock.quantity)
-                }
-            };
-            lock.priority = profit / lock.deadline as f32;
-            lock.priority = thread_rng().gen_range(0.0..100.0);
+        for t in &mut self.transactions {
+            t.priority = (t.lock_sell.price - t.lock_buy.price) / t.deadline as f32;
         }
     }
 
     fn update_deadlines(&mut self) {
-        for lock in &mut self.locks {
-            lock.deadline -= 1;
+        for t in &mut self.transactions {
+            t.deadline -= 1;
         }
-        self.locks.retain(|lock| lock.deadline > 0);
+        self.transactions.retain(|t| t.deadline > 0);
     }
 
     // Buy & Sell Lock functions
@@ -196,7 +194,7 @@ impl ZSE_Trader {
     }
 
     // Buy & Sell functions
-    fn buy(&mut self, lock: &mut Lock) -> bool {
+    fn buy(&mut self, lock: &Lock) -> bool {
         let res = self.markets[get_index_by_market(&*lock.market)].borrow_mut().buy(lock.token.clone(), &mut self.goods[0]);
         match res {
             Ok(good) => {
@@ -206,7 +204,6 @@ impl ZSE_Trader {
             Err(err) => {
                 match err {
                     BuyError::InsufficientGoodQuantity { .. } => { println!("Not enough money to buy!"); }
-                    BuyError::UnrecognizedToken { .. } => { lock.deadline = 0; }
                     _ => { println!("{:?}", err); }
                 }
                 false
@@ -214,7 +211,7 @@ impl ZSE_Trader {
         }
     }
 
-    fn sell(&mut self, lock: &mut Lock) -> bool {
+    fn sell(&mut self, lock: &Lock) -> bool {
         let res = self.markets[get_index_by_market(&*lock.market)].borrow_mut().sell(lock.token.clone(), &mut self.goods[get_index_by_goodkind(&lock.good_kind)]);
         match res {
             Ok(good) => {
@@ -224,8 +221,7 @@ impl ZSE_Trader {
             Err(err) => {
                 match err {
                     SellError::InsufficientGoodQuantity { .. } => { println!("Not enough {} to sell!", lock.good_kind); }
-                    SellError::UnrecognizedToken { .. } => { lock.deadline = 0; }
-                    _ => { println!("{:?}", err); }
+                   _ => { println!("{:?}", err); }
                 }
                 false
             }
@@ -234,146 +230,73 @@ impl ZSE_Trader {
 
     // Locking logic
     fn lock_best_profit(&mut self) {
-        let mut best_buy = (BestPrice { price: 1000000.0, quantity: 0.0, market: "".to_string() }, 0);
-        let mut best_sell = (BestPrice { price: -1000000.0, quantity: 0.0, market: "".to_string() }, 0);
+        let mut best_good = 0;
+        let mut best_profit = 0.0;
 
-        // Find best buy and best sell
-        for mode in 0..2 {
-            for good in 1..4 {
-                if mode == 0 && self.best_prices[mode][good].price < best_buy.0.price {
-                    best_buy = (self.best_prices[mode][good].clone(), good);
-                } else if mode == 1 && self.best_prices[mode][good].price > best_sell.0.price {
-                    best_sell = (self.best_prices[mode][good].clone(), good);
-                }
+        for good in 1..4 {
+            let profit = self.best_prices[1][good].price - self.best_prices[0][good].price;
+            if profit > best_profit {
+                best_good = good;
+                best_profit = profit;
             }
         }
 
-        // Calculate profit for best_buy and best_sell (looks if it's from a lock or best_prices of markets)
-        let cost_buy = best_buy.0.price * best_buy.0.quantity;
-        let cost_sell = best_sell.0.price * best_sell.0.quantity;
-        let mut profit_buy = (self.best_prices[1][best_buy.1].price * self.best_prices[1][best_buy.1].quantity) - cost_buy;
-        let mut profit_sell = (cost_sell - self.best_prices[0][best_buy.1].price * self.best_prices[0][best_buy.1].quantity);
-
-        for lock in &self.locks {
-            let lock_cost = lock.price * lock.quantity;
-            match lock.mode {
-                Mode::Sell => {
-                    if lock.good_kind == get_goodkind_by_index(best_buy.1) && (lock_cost - cost_buy) > profit_buy {
-                        profit_buy = lock_cost - cost_buy;
-                    }
-                }
-                Mode::Buy => {
-                    if lock.good_kind == get_goodkind_by_index(best_sell.1) && (cost_sell - lock_cost) > profit_sell {
-                        profit_sell = cost_sell - lock_cost;
-                    }
-                }
-            }
-        }
-
-        let mut new_lock = Lock {
-            token: "".to_string(),
-            mode: Mode::Buy,
-            market: "".to_string(),
-            deadline: 0,
-            good_kind: GoodKind::EUR,
-            price: 0.0,
-            quantity: 0.0,
-            priority: 0.0,
-        };
-        // Choose which to lock between best_buy or best_sell
-        let mut best_profit = profit_buy;
-        let mut best = best_buy;
-        if profit_buy < profit_sell {
-            best_profit = profit_sell;
-            best = best_sell;
-            new_lock.mode = Mode::Sell;
-        }
-        new_lock.market = best.0.market.clone();
-        new_lock.deadline = get_deadline_by_market(&new_lock.market);
-        new_lock.good_kind = get_goodkind_by_index(best.1);
-        new_lock.price = best.0.price;
-        new_lock.quantity = best.0.quantity;
-
-        match new_lock.mode {
-            Mode::Buy => {
-                if self.lock_buy(&mut new_lock) { self.locks.push(new_lock.clone()); }
-                else { wait_one_day!(); }
-            }
-            Mode::Sell => {
-                if self.lock_sell(&mut new_lock) { self.locks.push(new_lock.clone()) }
-                else { wait_one_day!(); }
-            }
-        }
-    }
-
-    fn lock_random(&mut self) {
-        let mut new_lock = Lock {
-            token: "".to_string(),
-            mode: Mode::Buy,
-            market: "".to_string(),
-            deadline: 0,
-            good_kind: GoodKind::EUR,
-            price: 0.0,
-            quantity: 0.0,
-            priority: 0.0,
-        };
-
-        let mode = thread_rng().gen_range(0..2);
-        let good = thread_rng().gen_range(1..4);
-
-        if mode == 0 {
-            new_lock.mode = Mode::Buy;
+        let biggest_qty = if self.best_prices[0][best_good].quantity > self.best_prices[0][best_good].quantity {
+            self.best_prices[0][best_good].quantity
         } else {
-            new_lock.mode = Mode::Sell;
-        }
-        new_lock.market = self.best_prices[mode][good].market.clone();
-        new_lock.deadline = get_deadline_by_market(&new_lock.market);
-        new_lock.good_kind = get_goodkind_by_index(good);
-        new_lock.price = self.best_prices[mode][good].price;
-        new_lock.quantity = self.best_prices[mode][good].quantity;
+            self.best_prices[1][best_good].quantity
+        };
 
-        match new_lock.mode {
-            Mode::Buy => {
-                if self.lock_buy(&mut new_lock) { self.locks.push(new_lock.clone()); }
-                else { wait_one_day!(); }
-            }
-            Mode::Sell => {
-                if self.lock_sell(&mut new_lock) { self.locks.push(new_lock.clone()) }
-                else { wait_one_day!(); }
-            }
+        let deadline = if get_deadline_by_market(&self.best_prices[0][best_good].market) < get_deadline_by_market(&self.best_prices[1][best_good].market) {
+            get_deadline_by_market(&self.best_prices[0][best_good].market)
+        } else {
+            get_deadline_by_market(&self.best_prices[1][best_good].market)
+        };
+
+        let mut transaction = Transaction {
+            lock_buy: Lock {
+                good_kind: get_goodkind_by_index(best_good),
+                market: self.best_prices[0][best_good].market.clone(),
+                price: self.best_prices[0][best_good].price,
+                quantity: biggest_qty,
+                token: String::new(),
+                mode: Mode::Buy
+            },
+            lock_sell: Lock {
+                good_kind: get_goodkind_by_index(best_good),
+                market: self.best_prices[1][best_good].market.clone(),
+                price: self.best_prices[1][best_good].price,
+                quantity: biggest_qty,
+                token: String::new(),
+                mode: Mode::Sell
+            },
+            deadline,
+            priority: 0.0,
+        };
+
+        if self.lock_buy(&mut transaction.lock_buy) && self.lock_sell(&mut transaction.lock_sell) {
+            self.transactions.push(transaction);
         }
     }
 
     // HRRN implementation
     fn HRRN(&mut self) {
-        let mut lock_index = 0;
+        let mut transaction_index = 0;
 
-        for i in 1..self.locks.len() {
-            if self.locks[i].priority > self.locks[lock_index].priority {
-                lock_index = i;
+        for i in 0..self.transactions.len() {
+            if self.transactions[i].priority > self.transactions[i].priority {
+                transaction_index = i;
             }
         }
 
-        match self.locks[lock_index].mode {
-            Mode::Buy => {
-                if self.goods[0].get_qty() >= self.locks[lock_index].quantity * self.locks[lock_index].price {
-                    if self.buy(&mut self.locks[lock_index].clone()) {
-                        self.locks[lock_index].deadline = 0;
-                    } else {
-                        println!("Error in buy function! (HRRN)");
-                    }
-                }
-            },
-            Mode::Sell => {
-                let index = get_index_by_goodkind(&self.locks[lock_index].good_kind);
-                if self.goods[index].get_qty() >= self.locks[lock_index].quantity * self.locks[lock_index].price {
-                    if self.sell(&mut self.locks[lock_index].clone()) {
-                        self.locks[lock_index].deadline = 0;
-                    } else {
-                        println!("Error in sell function! (HRRN)");
-                    }
-                }
-            },
+        let cost_buy = self.transactions[transaction_index].lock_buy.price * self.transactions[transaction_index].lock_buy.quantity;
+        if self.goods[0].get_qty() >= cost_buy {
+            if self.buy(&self.transactions[transaction_index].lock_buy.clone())
+            && self.sell(&self.transactions[transaction_index].lock_sell.clone()) {
+                self.transactions.remove(transaction_index);
+            } else {
+                self.transactions[transaction_index].deadline = 0;
+            }
         }
     }
 
@@ -383,23 +306,18 @@ impl ZSE_Trader {
 
         while !bankrupt {
             self.update_all_prices();
-            // print lock length and budget
             println!("...................................");
-            println!("Locks: {}", self.locks.len());
+            println!("Locks: {}", self.transactions.len());
             println!("Budget: {}", self.get_budget());
-            alpha = self.locks.len() as f32 / WINDOW_SIZE as f32;
-            if rand::thread_rng().gen_range(0.0..1.0) < alpha {
+            alpha = self.transactions.len() as f32 / WINDOW_SIZE as f32;
+            if thread_rng().gen_range(0.0..1.0) < alpha {
                 self.HRRN();
             } else {
-                if thread_rng().gen_range(0.0..1.0) < 0.6 {
-                    self.lock_best_profit();
-                } else {
-                    self.lock_random();
-                }
+                self.lock_best_profit();
             }
             self.update_priorities();
             self.update_deadlines();
-            std::thread::sleep(std::time::Duration::from_millis(200));
+            std::thread::sleep(std::time::Duration::from_millis(500));
             bankrupt = if self.get_budget() <= 0.0 { true } else { false };
         }
     }
