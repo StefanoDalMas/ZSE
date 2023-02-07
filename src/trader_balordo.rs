@@ -17,7 +17,6 @@ const WINDOW_SIZE: i32 = 5; // 5 * 2 = 10 (min BFB)
 pub struct ZSE_Trader {
     name: String,
     markets: Vec<Rc<RefCell<dyn Market>>>,
-    prices: Vec<Vec<Vec<f32>>>,
     best_prices: Vec<Vec<BestPrice>>,
     goods: Vec<Good>,
     transactions: Vec<Transaction>,
@@ -64,7 +63,6 @@ impl ZSE_Trader {
         //markets.push(Bfb::new_with_quantities(STARTING_QUANTITY, STARTING_QUANTITY, STARTING_QUANTITY, STARTING_QUANTITY));
         //markets.push(BVCMarket::new_with_quantities(STARTING_QUANTITY, STARTING_QUANTITY, STARTING_QUANTITY, STARTING_QUANTITY));
         subscribe_each_other!(markets[0], markets[1], markets[2]);
-        let prices = vec![vec![vec![1.0; 4]; 3]; 2];
 
         let mut remaining = STARTING_QUANTITY;
         let mut tmp = vec![0.0; 4];
@@ -89,29 +87,14 @@ impl ZSE_Trader {
         best_prices[1] = vec![BestPrice{ price: -1000000.0, quantity: 0.0, market: "".to_string() }; 4];
         let transactions = Vec::new();
 
-        Self { name, markets, prices, best_prices, goods, transactions }
+        Self { name, markets, best_prices, goods, transactions }
     }
 
     pub fn get_name(&self) -> &String { &self.name }
 
     pub fn get_markets(&self) -> &Vec<Rc<RefCell<dyn Market>>> { &self.markets }
 
-    pub fn get_prices(&self) -> &Vec<Vec<Vec<f32>>> { &self.prices }
-
     pub fn get_budget(&self) -> f32 { self.goods.iter().map(|good| convert_to_eur(good)).sum() }
-
-    pub fn update_all_prices(&mut self) {
-        for m in &self.markets {
-            let index = get_index_by_market(m.borrow().get_name());
-            let goods = m.borrow().get_goods();
-            for g in goods {
-                let index_kind = get_index_by_goodkind(&g.good_kind);
-                self.prices[0][index][index_kind] = g.exchange_rate_buy;
-                self.prices[1][index][index_kind] = g.exchange_rate_sell;
-            }
-        }
-        self.update_best_prices();
-    }
 
     fn update_best_prices(&mut self) {
         for mode in 0..2 {
@@ -142,6 +125,7 @@ impl ZSE_Trader {
     }
 
     fn update_priorities(&mut self) {
+        // HRRN priority
         for t in &mut self.transactions {
             t.priority = (t.lock_sell.price - t.lock_buy.price) / t.deadline as f32;
         }
@@ -185,7 +169,7 @@ impl ZSE_Trader {
                 match err {
                     LockSellError::OfferTooHigh { offered_good_kind: _, offered_good_quantity: qty, high_offer: _, highest_acceptable_offer: maximum } => {
                         lock.price = maximum / qty;
-                        self.lock_buy(lock)
+                        self.lock_sell(lock)
                     }
                     _ => { false }
                 }
@@ -279,8 +263,8 @@ impl ZSE_Trader {
         }
     }
 
-    // HRRN implementation
-    fn HRRN(&mut self) {
+    // Dropshifting implementation
+    fn dropshift(&mut self) {
         let mut transaction_index = 0;
 
         for i in 0..self.transactions.len() {
@@ -305,13 +289,13 @@ impl ZSE_Trader {
         let mut bankrupt= false;
 
         while !bankrupt {
-            self.update_all_prices();
+            self.update_best_prices();
             println!("...................................");
             println!("Locks: {}", self.transactions.len());
             println!("Budget: {}", self.get_budget());
             alpha = self.transactions.len() as f32 / WINDOW_SIZE as f32;
             if thread_rng().gen_range(0.0..1.0) < alpha {
-                self.HRRN();
+                self.dropshift();
             } else {
                 self.lock_best_profit();
             }
@@ -329,25 +313,6 @@ impl ZSE_Trader {
                 print!("({}, {}, {}) ", self.best_prices[i][j].price, self.best_prices[i][j].quantity, self.best_prices[i][j].market);
             }
             println!();
-        }
-    }
-
-    pub fn print_prices(&self) {
-        for i in 0..self.prices.len() {
-            if i == 0 {
-                println!("\nBuy prices:");
-            } else {
-                println!("\nSell prices:");
-            }
-            println!("        USD         YEN         YUAN");
-            for j in 0..self.prices[i].len() {
-                let name = get_market_name(j);
-                print!("{}:\t", name);
-                for k in 1..self.prices[i][j].len() {
-                    print!("{}\t", self.prices[i][j][k]);
-                }
-                println!();
-            }
         }
     }
 
