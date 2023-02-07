@@ -1,4 +1,3 @@
-mod filereader;
 
 //eframe related imports
 use eframe::{App, CreationContext, egui, Frame, run_native};
@@ -7,6 +6,7 @@ use eframe::egui::plot::{Line, Plot, PlotPoints, PlotPoint};
 
 //other imports
 use rand::Rng;
+use crate::filereader;
 
 
 pub type data = egui::plot::PlotPoint; //might modify later idk
