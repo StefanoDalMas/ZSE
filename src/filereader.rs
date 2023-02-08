@@ -6,6 +6,7 @@ use eframe::egui::plot::PlotPoints::Owned;
 use std::fs::{OpenOptions, write};
 use std::io::{BufRead, BufReader, Read, Write};
 use rand::Rng;
+use crate::coolvisualizer;
 
 
 //consts and types zone
@@ -14,30 +15,42 @@ const PATH_LOG :&str = "textdump.txt";
 #[derive(Debug, Clone)]
 pub(crate) struct Dataset{
     values :VecDeque<PlotPoint>,
+    pub window_size: f64,
 }
 
 impl Dataset{
-    pub fn new() -> Self{
+    pub fn new(window_size:f64) -> Self{
         init_file();
         Dataset{
             values: VecDeque::new(),
+            window_size,
         }
     }
     pub fn append_single_plotpoint(&mut self, value:PlotPoint){
+        //when I append a value I want to remove older ones
+        let last_x = value.x - self.window_size;
         self.values.push_back(value);
+        while let Some(el) = self.values.front(){
+            if el.x < last_x{
+                self.values.pop_front();
+            }
+            else{
+                break;
+            }
+        }
     }
     pub fn append_vector(&mut self, values : Vec<PlotPoint>){
         for value in values{
             self.values.push_back(value);
         }
     }
-    pub fn return_plotpoints(&self) -> PlotPoints{ //make dequeue into plotpoints
+    pub fn get_as_plotpoints(&self) -> PlotPoints{ //make dequeue into plotpoints
         Owned(Vec::from_iter(self.values.iter().cloned()))
     }
 
-    pub fn publish_5_times(&mut self){
-        for _ in 0..5{
-            write_metadata();
+    pub fn publish_test_times(&mut self,times:i32){
+        for _ in 0..times{
+            write_random_metadata();
         }
     }
     pub fn consume_one_line(&mut self) -> Option<String>{
@@ -61,7 +74,7 @@ fn init_file() {
     };
 }
 
-fn write_metadata() {
+fn write_random_metadata() {
     let file = OpenOptions::new()
         .append(true)
         .open(PATH_LOG);
@@ -104,7 +117,7 @@ fn consume_data() -> Option<String>{
             let mut lines = reader.lines()
                 .map(|x| x.unwrap())
                 .collect::<Vec<String>>().join("\n");
-            println!("HO AGGIUNTOOOOOO {}",lines);
+            //println!("HO AGGIUNTOOOOOO {}",lines);
             //check if all was ok
             let wrote = write(PATH_LOG, lines);
             match wrote {
@@ -118,5 +131,5 @@ fn consume_data() -> Option<String>{
 
 #[test]
 fn main(){
-    let x = Dataset::new();
+    let x = Dataset::new(coolvisualizer::WINSIZE);
 }

@@ -64,6 +64,9 @@ fn main() {
     trader.print_goods_trader();
     trader.print_data();
     println!("tot cicli: {}", count);
+
+    //VISUALIZER STUFF DON'T TOUCH PLZ
+    //coolvisualizer::try_viz();
 }
 
 pub enum GK {
