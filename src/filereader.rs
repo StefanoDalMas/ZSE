@@ -7,10 +7,11 @@ use std::fs::{OpenOptions, write};
 use std::io::{BufRead, BufReader, Read, Write};
 use rand::Rng;
 use crate::coolvisualizer;
+use crate::common;
 
 
 //consts and types zone
-const PATH_LOG :&str = "textdump.txt";
+
 
 #[derive(Debug, Clone)]
 pub(crate) struct Dataset{
@@ -20,7 +21,6 @@ pub(crate) struct Dataset{
 
 impl Dataset{
     pub fn new(window_size:f64) -> Self{
-        init_file();
         Dataset{
             values: VecDeque::new(),
             window_size,
@@ -29,15 +29,8 @@ impl Dataset{
     pub fn append_single_plotpoint(&mut self, value:PlotPoint){
         //when I append a value I want to remove older ones
         let last_x = value.x - self.window_size;
+        self.values.retain(|x| x.x >= last_x);
         self.values.push_back(value);
-        while let Some(el) = self.values.front(){
-            if el.x < last_x{
-                self.values.pop_front();
-            }
-            else{
-                break;
-            }
-        }
     }
     pub fn append_vector(&mut self, values : Vec<PlotPoint>){
         for value in values{
@@ -46,6 +39,7 @@ impl Dataset{
     }
     pub fn get_as_plotpoints(&self) -> PlotPoints{ //make dequeue into plotpoints
         Owned(Vec::from_iter(self.values.iter().cloned()))
+        //Owned(Vec::from(self.values.clone())) maybe works idk
     }
 
     pub fn publish_test_times(&mut self,times:i32){
@@ -67,7 +61,7 @@ fn init_file() {
         .write(true)
         .create(true)
         .truncate(true)
-        .open(PATH_LOG);
+        .open(common::PATH_LOG);
     match file {
         Ok(file) => file,
         Err(_) => panic!("Error opening / creating file"),
@@ -77,7 +71,7 @@ fn init_file() {
 fn write_random_metadata() {
     let file = OpenOptions::new()
         .append(true)
-        .open(PATH_LOG);
+        .open(common::PATH_LOG);
     match file {
         Ok(mut file) => {
             //generate random metadata
@@ -93,7 +87,7 @@ fn write_random_metadata() {
                 Err(_) => println!("Error writing to file"),
             }
         }
-        Err(_) => panic!("Error opening file"),
+        Err(_) => println!("Error opening file"),
     };
 }
 
@@ -101,7 +95,7 @@ fn consume_data() -> Option<String>{
     let file = OpenOptions::new()
         .read(true)
         .write(true)
-        .open(PATH_LOG);
+        .open(common::PATH_LOG);
     match file {
         Ok(file) => {
             //read a whole line
@@ -119,7 +113,7 @@ fn consume_data() -> Option<String>{
                 .collect::<Vec<String>>().join("\n");
             //println!("HO AGGIUNTOOOOOO {}",lines);
             //check if all was ok
-            let wrote = write(PATH_LOG, lines);
+            let wrote = write(common::PATH_LOG, lines);
             match wrote {
                 Ok(_) => {return Some(string)},
                 Err(_) => {return None}

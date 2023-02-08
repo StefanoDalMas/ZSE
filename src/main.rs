@@ -9,6 +9,9 @@ pub mod market;
 mod trader;
 mod coolvisualizer;
 mod filereader;
+mod trader_balordo;
+mod common;
+
 
 #[derive(Hash)]
 struct Request_good{
@@ -19,28 +22,7 @@ struct Request_good{
 }
 
 fn main() {
-    /* 
-    println!("Init market");
-    let mut market = market::ZSE::new_random();
-    println!("{}", market.borrow().get_budget());
-    println!("{:?}", market.borrow().get_goods());
-
-    println!("Lock buy");
-    let x = market.borrow_mut().lock_buy(unitn_market_2022::good::good_kind::GoodKind::USD,5.0,7.0,"test".to_string());
-    println!("{}", market.borrow().get_budget());
-    println!("{:?}", market.borrow().get_goods());
-
-    println!("Buy");
-    let _ = market.borrow_mut().buy(x.unwrap(), &mut unitn_market_2022::good::good::Good::new(unitn_market_2022::good::good_kind::GoodKind::EUR, 50000.0));
-    println!("{}", market.borrow().get_budget());
-    println!("{:?}", market.borrow().get_goods());
-
-    println!("Lock sell and sell");
-    let y = market.borrow_mut().lock_sell(unitn_market_2022::good::good_kind::GoodKind::USD,100.0,2.0,"test".to_string());
-    let _ = market.borrow_mut().sell(y.unwrap(), &mut unitn_market_2022::good::good::Good::new(unitn_market_2022::good::good_kind::GoodKind::USD, 102.0));
-    println!("{}", market.borrow().get_budget());
-    println!("{:?}", market.borrow().get_goods());
-    */
+    /* trader marina
     let mut trader = trader::ZSE_Trader::new();
     println!("{}", trader.get_name());
     for market in trader.get_markets() {
@@ -64,7 +46,11 @@ fn main() {
     trader.print_goods_trader();
     trader.print_data();
     println!("tot cicli: {}", count);
+    */
 
+    //trader andy
+    //let mut trader = trader_balordo::ZSE_Trader::new();
+    //trader.trade();
     //VISUALIZER STUFF DON'T TOUCH PLZ
     //coolvisualizer::try_viz();
 }
