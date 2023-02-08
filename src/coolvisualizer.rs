@@ -13,11 +13,12 @@ use std::sync::{Arc, Mutex};
 use std::{fmt, thread};
 use std::fmt::Formatter;
 use std::thread::sleep;
+use crate::common;
 
 
 pub type data = egui::plot::PlotPoint; //might modify later idk
 pub const WINSIZE:f64 = 100.0;
-pub const TEST_DATASET_SIZE:i32=15000;
+
 const MIN_Y:f64 = 0.0;
 const MAX_Y:f64 = 50000.0;
 const DEFAULT_DELAY_MS:u64 = 15;
@@ -34,10 +35,10 @@ impl Cooltrader{
             name:"Cooltrader".to_string(),
             dataset:Arc::new(Mutex::new(filereader::Dataset::new(window_size))),
             minmaxwindow_y,
-
         }
     }
 }
+
 impl App for Cooltrader{
     fn update(&mut self, ctx: &Context, frame: &mut Frame) {
         CentralPanel::default().show(ctx, |ui| { //the window itself
@@ -56,23 +57,8 @@ impl App for Cooltrader{
     }
 }
 
-fn fake_data_generator() -> Vec<PlotPoint>{
-    let mut seed = rand::thread_rng();
-    let mut res = Vec::new();
-    let size = 10;
-    let mut lastx =0.0;
-    let mut lasty =0.0;
-    for _ in 0..size{
-        let x = seed.gen_range(lastx..20.0);
-        let y = seed.gen_range(lasty..20.0);
-        let point = PlotPoint{x,y};
-        res.push(point);
-        lastx = x;
-        lasty = y;
-    }
-    res
-}
 
+//EUR value USD value YEN value YUAN value -> f64
 fn get_budget(s: String) -> f64{
     let mut res = s.split_whitespace();
     let mut sum = 0.0;
@@ -94,10 +80,10 @@ struct Args {
     pub window_size: f64,
 
     #[arg(short, long, default_value_t = MIN_Y)]
-    pub min_y: f64,
+    pub lower_bound: f64,
 
-    #[arg(short, long, default_value_t = MAX_Y)]
-    pub y_max: f64,
+    #[arg(short,long, default_value_t = MAX_Y)]
+    pub upper_bound: f64,
 
     #[arg(short, long, default_value_t = DEFAULT_DELAY_MS)]
     pub delay_ms : u64,
@@ -106,11 +92,11 @@ struct Args {
 //this is the main in local
 pub fn try_viz(){
     let args = Args::parse();
-    let mut window_y = vec![args.min_y,args.y_max];
+    let mut window_y = vec![args.lower_bound,args.lower_bound];
     let mut cooltrader = Cooltrader::new(args.window_size,window_y);
     let native_options = eframe::NativeOptions::default();
     let mut thread_cooltrader = cooltrader.dataset.clone();
-    cooltrader.dataset.lock().unwrap().publish_test_times(TEST_DATASET_SIZE);
+    //cooltrader.dataset.lock().unwrap().publish_test_times(common::TEST_DATASET_SIZE);
     //cooltrader.dataset.lock().unwrap().append_vector(fake_data_generator()); to add some dumb data
     //eframe cannot both visualize and collect data at the same time, so we have to use a thread
     thread::spawn(move ||{
@@ -118,7 +104,7 @@ pub fn try_viz(){
         let mut count =0.0;
         let mut budget = 0.0;
         let mut s;
-        while count<TEST_DATASET_SIZE as f64 {
+        while count < common::TEST_DATASET_SIZE as f64 {
             s = thread_cooltrader.lock().unwrap().consume_one_line(); //read one line from the dataset
             match s{
                 Some(s) => {
@@ -126,13 +112,12 @@ pub fn try_viz(){
                     //append data to the vector to make it visible in the plot
                     thread_cooltrader.lock().unwrap().append_single_plotpoint(PlotPoint{x:count,y:budget});
                     print_vector(&thread_cooltrader.lock().unwrap().get_as_plotpoints());
-
-
+                    count+=1.0;
                     sleep(std::time::Duration::from_millis(args.delay_ms)); //delay to debug
                 },
                 None => println!("No more data to consume"),
             }
-            count+=1.0;
+
         }
     });
 
@@ -152,4 +137,21 @@ fn print_point(point: &PlotPoint){
 
 fn print_vector(vector: &PlotPoints){
     vector.points().iter().for_each(|x| print_point(x));
+}
+
+fn fake_data_generator() -> Vec<PlotPoint>{
+    let mut seed = rand::thread_rng();
+    let mut res = Vec::new();
+    let size = 10;
+    let mut lastx =0.0;
+    let mut lasty =0.0;
+    for _ in 0..size{
+        let x = seed.gen_range(lastx..20.0);
+        let y = seed.gen_range(lasty..20.0);
+        let point = PlotPoint{x,y};
+        res.push(point);
+        lastx = x;
+        lasty = y;
+    }
+    res
 }

@@ -1,4 +1,6 @@
 use std::cell::RefCell;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::rc::Rc;
 use rand::{Rng, thread_rng};
 
@@ -10,6 +12,7 @@ use unitn_market_2022::good::{good::Good, good_kind::GoodKind};
 use unitn_market_2022::market::{Market, LockBuyError, LockSellError, BuyError, SellError};
 use unitn_market_2022::{subscribe_each_other, wait_one_day};
 use unitn_market_2022::good::consts::{DEFAULT_EUR_USD_EXCHANGE_RATE, DEFAULT_EUR_YEN_EXCHANGE_RATE, DEFAULT_EUR_YUAN_EXCHANGE_RATE};
+use crate::common;
 
 const STARTING_QUANTITY: f32 = 100000.0;
 const WINDOW_SIZE: i32 = 5; // 5 * 2 = 10 (min BFB)
@@ -197,6 +200,7 @@ impl ZSE_Trader {
         match res {
             Ok(good) => {
                 self.goods[get_index_by_goodkind(&lock.good_kind)].merge(good).expect("Merge error in buy function");
+                write_metadata(&self.goods);
                 true
             }
             Err(err) => {
@@ -214,6 +218,7 @@ impl ZSE_Trader {
         match res {
             Ok(good) => {
                 self.goods[0].merge(good).expect("Merge error in sell function");
+                write_metadata(&self.goods);
                 true
             }
             Err(err) => {
@@ -296,11 +301,13 @@ impl ZSE_Trader {
                 self.transactions[transaction_index].deadline = 0;
             }
         }
+
     }
 
     pub fn trade(&mut self) {
         let mut alpha;
         let mut bankrupt= false;
+        init_file();
 
         while !bankrupt {
             self.update_best_prices();
@@ -401,4 +408,36 @@ fn convert_goodquantity_to_eur(g: &GoodKind, qty: f32) -> f32 {
         GoodKind::YEN => qty / DEFAULT_EUR_YEN_EXCHANGE_RATE,
         GoodKind::YUAN => qty / DEFAULT_EUR_YUAN_EXCHANGE_RATE,
     }
+}
+
+//writing to file
+
+fn init_file() {
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(common::PATH_LOG);
+    match file {
+        Ok(file) => file,
+        Err(_) => panic!("Error opening / creating file"),
+    };
+}
+
+fn write_metadata(goods: &Vec<Good>) {
+    let file = OpenOptions::new()
+        .append(true)
+        .open(common::PATH_LOG);
+    match file {
+        Ok(mut file) => {
+            //generate random metadata
+            let s = format!("EUR {} USD {} YEN {} YUAN {} \n",goods[0].get_qty(),goods[1].get_qty(),goods[2].get_qty(),goods[3].get_qty());
+            let write = file.write_all(s.as_bytes());
+            match write {
+                Ok(_) => {}
+                Err(_) => println!("Error writing to file"),
+            }
+        }
+        Err(_) => println!("Error opening file"),
+    };
 }
