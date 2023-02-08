@@ -263,8 +263,8 @@ impl ZSE_Trader {
         }
     }
 
-    // Dropshifting implementation
-    fn dropshift(&mut self) {
+    // Dropshipping implementation
+    fn dropship(&mut self) {
         let mut transaction_index = 0;
 
         for i in 0..self.transactions.len() {
@@ -295,7 +295,7 @@ impl ZSE_Trader {
             println!("Budget: {}", self.get_budget());
             alpha = self.transactions.len() as f32 / WINDOW_SIZE as f32;
             if thread_rng().gen_range(0.0..1.0) < alpha {
-                self.dropshift();
+                self.dropship();
             } else {
                 self.lock_best_profit();
             }
