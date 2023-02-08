@@ -103,15 +103,29 @@ impl ZSE_Trader {
                     for qty in [10.0, 50.0, 100.0] {
                         let unit_price;
                         if mode == 0 {
-                            unit_price = match self.markets[market].borrow().get_buy_price(get_goodkind_by_index(good), qty) {
-                                Ok(price) => price / qty,
-                                Err(_) => 0.0,
-                            };
+                            let m_good = self.markets[market].borrow().get_goods()[good].quantity;
+                            if m_good > qty {
+                                unit_price = match self.markets[market].borrow().get_buy_price(get_goodkind_by_index(good), qty) {
+                                    Ok(price) => price / qty,
+                                    Err(_) => 0.0,
+                                };
+                            } else {
+                                unit_price = 1000000.0;
+                            }
                         } else {
-                            unit_price = match self.markets[market].borrow().get_sell_price(get_goodkind_by_index(good), qty) {
-                                Ok(price) => price / qty,
+                            let m_eur = self.markets[market].borrow().get_goods()[0].quantity;
+                            let cost = match self.markets[market].borrow().get_sell_price(get_goodkind_by_index(good), qty) {
+                                Ok(price) => price * qty,
                                 Err(_) => 0.0,
                             };
+                            if m_eur > cost {
+                                unit_price = match self.markets[market].borrow().get_sell_price(get_goodkind_by_index(good), qty) {
+                                    Ok(price) => price / qty,
+                                    Err(_) => 0.0,
+                                };
+                            } else {
+                                unit_price = -1000000.0;
+                            }
                         }
                         if (mode == 0 && unit_price < self.best_prices[mode][good].price) || (mode == 1 && unit_price > self.best_prices[mode][good].price) {
                             self.best_prices[mode][good].price = unit_price;
