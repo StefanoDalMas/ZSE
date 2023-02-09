@@ -25,19 +25,19 @@ struct Request_good{
 
 fn main() {
     // trader marina
-    let mut trader = trader::ZSE_Trader::new();
+    // let mut trader = trader::ZSE_Trader::new();
     
-    let mut count = 0;
-    let mut state = true;
-     while state{
-        state = trader.strategy(count);
-        count += 1;
-    }
-    println!();
-    println!();
-    trader.print_goods_trader();
-    trader.print_data();
-    println!("tot cicli: {}", count);
+    // let mut count = 0;
+    // let mut state = true;
+    //  while state{
+    //     state = trader.strategy(count);
+    //     count += 1;
+    // }
+    // println!();
+    // println!();
+    // trader.print_goods_trader();
+    // trader.print_data();
+    // println!("tot cicli: {}", count);
 
     //trader andy
     //let mut trader = trader_balordo::ZSE_Trader::new();
