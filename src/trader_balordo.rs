@@ -9,13 +9,13 @@ use bfb::bfb_market::Bfb;
 use BVC::BVCMarket;
 
 use unitn_market_2022::good::{good::Good, good_kind::GoodKind};
-use unitn_market_2022::market::{Market, LockBuyError, LockSellError, BuyError, SellError};
+use unitn_market_2022::market::{Market, LockBuyError, LockSellError};
 use unitn_market_2022::{subscribe_each_other, wait_one_day};
 use unitn_market_2022::good::consts::{DEFAULT_EUR_USD_EXCHANGE_RATE, DEFAULT_EUR_YEN_EXCHANGE_RATE, DEFAULT_EUR_YUAN_EXCHANGE_RATE};
 
 use crate::common;
 
-const STARTING_QUANTITY: f32 = 100000.0;
+const STARTING_BUDGET: f32 = 40000.0;
 const WINDOW_SIZE: i32 = 5; // 5 * 2 = 10 (min BFB)
 
 pub struct ZSE_Trader {
@@ -29,7 +29,6 @@ pub struct ZSE_Trader {
 
 struct Lock {
     token: String,
-    mode: u32,
     market: String,
     price: f32,
 }
@@ -59,7 +58,7 @@ impl ZSE_Trader {
         markets.push(BVCMarket::new_random());
         subscribe_each_other!(markets[0], markets[1], markets[2]);
 
-        let mut remaining = STARTING_QUANTITY;
+        let mut remaining = STARTING_BUDGET;
         let mut tmp = vec![0.0; 4];
         let mut random_num;
 
@@ -72,14 +71,14 @@ impl ZSE_Trader {
 
         let goods = vec![
             Good::new(GoodKind::EUR, tmp[0]),
-            Good::new(GoodKind::USD, tmp[1]),
-            Good::new(GoodKind::YEN, tmp[2]),
-            Good::new(GoodKind::YUAN, tmp[3]),
+            Good::new(GoodKind::USD, tmp[1]  * DEFAULT_EUR_USD_EXCHANGE_RATE),
+            Good::new(GoodKind::YEN, tmp[2] * DEFAULT_EUR_YEN_EXCHANGE_RATE),
+            Good::new(GoodKind::YUAN, tmp[3] * DEFAULT_EUR_YUAN_EXCHANGE_RATE),
         ];
 
         let mut best_prices = vec![vec![BestPrice{ price: 0.0, quantity: 0.0, market: "".to_string() }; 4]; 2];
-        best_prices[0] = vec![BestPrice{ price: 1000000.0, quantity: 0.0, market: "".to_string() }; 4];
-        best_prices[1] = vec![BestPrice{ price: -1000000.0, quantity: 0.0, market: "".to_string() }; 4];
+        best_prices[0] = vec![BestPrice{ price: f32::MAX, quantity: 0.0, market: "".to_string() }; 4];
+        best_prices[1] = vec![BestPrice{ price: f32::MIN, quantity: 0.0, market: "".to_string() }; 4];
         let transactions = Vec::new();
 
         Self { name, markets, best_prices, goods, transactions, days: 0 }
@@ -101,25 +100,25 @@ impl ZSE_Trader {
                             let m_good = self.markets[market].borrow().get_goods()[good].quantity;
                             if m_good > qty {
                                 unit_price = match self.markets[market].borrow().get_buy_price(get_goodkind_by_index(good), qty) {
-                                    Ok(price) => if price > 0.0 { price / qty } else { 1000000.0 },
-                                    Err(_) => 1000000.0,
+                                    Ok(price) => if price > 0.0 { price / qty } else { f32::MAX },
+                                    Err(_) => f32::MAX,
                                 };
                             } else {
-                                unit_price = 1000000.0;
+                                unit_price = f32::MAX;
                             }
                         } else {
                             let m_eur = self.markets[market].borrow().get_goods()[0].quantity;
                             let cost = match self.markets[market].borrow().get_sell_price(get_goodkind_by_index(good), qty) {
                                 Ok(price) => price * qty,
-                                Err(_) => 1000000.0,
+                                Err(_) => f32::MIN,
                             };
                             if m_eur > cost {
                                 unit_price = match self.markets[market].borrow().get_sell_price(get_goodkind_by_index(good), qty) {
                                     Ok(price) => price / qty,
-                                    Err(_) => -1000000.0,
+                                    Err(_) => f32::MIN,
                                 };
                             } else {
-                                unit_price = -1000000.0;
+                                unit_price = f32::MIN;
                             }
                         }
                         if (mode == 0 && unit_price < self.best_prices[mode][good].price) || (mode == 1 && unit_price > self.best_prices[mode][good].price) {
@@ -252,13 +251,11 @@ impl ZSE_Trader {
                 market: self.best_prices[0][best_good].market.clone(),
                 price: self.best_prices[0][best_good].price,
                 token: String::new(),
-                mode: 0
             },
             lock_sell: Lock {
                 market: self.best_prices[1][best_good].market.clone(),
                 price: self.best_prices[1][best_good].price,
                 token: String::new(),
-                mode: 1
             },
             good_kind: get_goodkind_by_index(best_good),
             quantity: biggest_qty,
@@ -312,7 +309,7 @@ impl ZSE_Trader {
             }
             self.update_priorities();
             self.update_deadlines();
-            std::thread::sleep(std::time::Duration::from_millis(200));
+            //std::thread::sleep(std::time::Duration::from_millis(200));
             bankrupt = if self.get_budget() <= 0.0 { true } else { false };
         }
     }
@@ -326,12 +323,6 @@ impl ZSE_Trader {
             println!();
         }
     }
-
-    pub fn print_goods_trader(&self){
-        for g in &self.goods{
-            println!("{:?} ", g );
-        }
-    }
 }
 
 fn get_index_by_market(m: &str) -> usize {
@@ -342,16 +333,6 @@ fn get_index_by_market(m: &str) -> usize {
         "BVC" => 2,
         _ => panic!("Market not found"),
     }
-}
-
-fn get_market_name(n: usize) -> String{
-    let name = match n {
-        0 => "RCNZ".to_string(),
-        1 => "BFB".to_string(),
-        2 => "BVC".to_string(),
-        _ => panic!("Error in print_prices"),
-    };
-    name
 }
 
 fn get_deadline_by_market(m: &str) -> i32 {
@@ -391,15 +372,6 @@ fn convert_to_eur(g: &Good) -> f32 {
     }
 }
 
-fn convert_goodquantity_to_eur(g: &GoodKind, qty: f32) -> f32 {
-    match g {
-        GoodKind::EUR => qty,
-        GoodKind::USD => qty / DEFAULT_EUR_USD_EXCHANGE_RATE,
-        GoodKind::YEN => qty / DEFAULT_EUR_YEN_EXCHANGE_RATE,
-        GoodKind::YUAN => qty / DEFAULT_EUR_YUAN_EXCHANGE_RATE,
-    }
-}
-
 fn init_file() {
     let file = OpenOptions::new()
         .write(true)
@@ -418,8 +390,12 @@ fn write_metadata(goods: &Vec<Good>) {
         .open(common::PATH_LOG);
     match file {
         Ok(mut file) => {
-            //generate random metadata
-            let s = format!("EUR {} USD {} YEN {} YUAN {} \n",goods[0].get_qty(),goods[1].get_qty(),goods[2].get_qty(),goods[3].get_qty());
+            //let s = format!("EUR {} USD {} YEN {} YUAN {} \n",goods[0].get_qty(),goods[1].get_qty(),goods[2].get_qty(),goods[3].get_qty());
+            let mut s = "".to_string();
+            for g in goods{
+                s.push_str(&format!("{} {} ", g.get_kind(), convert_to_eur(g)));
+            }
+            s.push('\n');
             let write = file.write_all(s.as_bytes());
             match write {
                 Ok(_) => {}
