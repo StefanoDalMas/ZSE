@@ -111,12 +111,12 @@ impl ZSE_Trader {
                             let m_eur = self.markets[market].borrow().get_goods()[0].quantity;
                             let cost = match self.markets[market].borrow().get_sell_price(get_goodkind_by_index(good), qty) {
                                 Ok(price) => price * qty,
-                                Err(_) => 0.0,
+                                Err(_) => 1000000.0,
                             };
                             if m_eur > cost {
                                 unit_price = match self.markets[market].borrow().get_sell_price(get_goodkind_by_index(good), qty) {
                                     Ok(price) => price / qty,
-                                    Err(_) => 0.0,
+                                    Err(_) => -1000000.0,
                                 };
                             } else {
                                 unit_price = -1000000.0;
