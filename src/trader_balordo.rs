@@ -24,6 +24,7 @@ pub struct ZSE_Trader {
     best_prices: Vec<Vec<BestPrice>>,
     goods: Vec<Good>,
     transactions: Vec<Transaction>,
+    days: i32,
 }
 
 struct Lock {
@@ -81,7 +82,7 @@ impl ZSE_Trader {
         best_prices[1] = vec![BestPrice{ price: -1000000.0, quantity: 0.0, market: "".to_string() }; 4];
         let transactions = Vec::new();
 
-        Self { name, markets, best_prices, goods, transactions }
+        Self { name, markets, best_prices, goods, transactions, days: 0 }
     }
 
     pub fn get_name(&self) -> &String { &self.name }
@@ -100,8 +101,8 @@ impl ZSE_Trader {
                             let m_good = self.markets[market].borrow().get_goods()[good].quantity;
                             if m_good > qty {
                                 unit_price = match self.markets[market].borrow().get_buy_price(get_goodkind_by_index(good), qty) {
-                                    Ok(price) => price / qty,
-                                    Err(_) => 0.0,
+                                    Ok(price) => if price > 0.0 { price / qty } else { 1000000.0 },
+                                    Err(_) => 1000000.0,
                                 };
                             } else {
                                 unit_price = 1000000.0;
@@ -148,16 +149,27 @@ impl ZSE_Trader {
 
     // Buy & Sell Lock functions
     fn lock_buy(&mut self, t: &mut Transaction) -> bool {
+        if self.days >= 5 {
+            for _ in 0..5 {
+                wait_one_day!();
+            }
+            self.days = 0;
+        }
         let res = self.markets[get_index_by_market(&*t.lock_buy.market)].borrow_mut().lock_buy(t.good_kind, t.quantity, t.lock_buy.price * t.quantity, "ZSE".to_string());
         match res {
             Ok(str) => {
                 t.lock_buy.token = str;
+                self.days = 0;
                 true
             }
             Err(err) => {
                 match err {
-                    LockBuyError::BidTooLow { requested_good_kind: _, requested_good_quantity: qty, low_bid: _, lowest_acceptable_bid: minimum } => {
+                    LockBuyError::BidTooLow { requested_good_kind: _, requested_good_quantity: qty, low_bid: offered, lowest_acceptable_bid: minimum } => {
                         t.lock_buy.price = minimum / qty;
+                        if minimum - offered < 0.00001 {
+                            t.lock_buy.price += 0.00001;
+                        }
+                        self.days += 1;
                         self.lock_buy(t)
                     }
                     _ => { false }
@@ -175,8 +187,11 @@ impl ZSE_Trader {
             }
             Err(err) => {
                 match err {
-                    LockSellError::OfferTooHigh { offered_good_kind: _, offered_good_quantity: qty, high_offer: _, highest_acceptable_offer: maximum } => {
+                    LockSellError::OfferTooHigh { offered_good_kind: _, offered_good_quantity: qty, high_offer: offered, highest_acceptable_offer: maximum } => {
                         t.lock_sell.price = maximum / qty;
+                        if offered - maximum > 0.00001 {
+                            t.lock_sell.price -= 0.00001;
+                        }
                         self.lock_sell(t)
                     }
                     _ => { false }
@@ -214,7 +229,6 @@ impl ZSE_Trader {
     fn lock_best_profit(&mut self) {
         let mut best_good = 0;
         let mut best_profit = 0.0;
-
         for good in 1..4 {
             let profit = self.best_prices[1][good].price - self.best_prices[0][good].price;
             if profit > best_profit {
@@ -260,7 +274,6 @@ impl ZSE_Trader {
     // Dropshipping implementation
     fn dropship(&mut self) {
         let mut transaction_index = 0;
-
         for i in 0..self.transactions.len() {
             if self.transactions[i].priority > self.transactions[i].priority {
                 transaction_index = i;
@@ -299,7 +312,7 @@ impl ZSE_Trader {
             }
             self.update_priorities();
             self.update_deadlines();
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            std::thread::sleep(std::time::Duration::from_millis(200));
             bankrupt = if self.get_budget() <= 0.0 { true } else { false };
         }
     }
