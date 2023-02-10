@@ -350,9 +350,9 @@ impl Market for ZSE {
             print_metadata(logcode);
             return Err(BuyError::GoodKindNotDefault { non_default_good_kind: cash.get_kind() });
         }
-        if cash.get_qty() < agreed_quantity {
+        if cash.get_qty() < agreed_price {
             print_metadata(logcode);
-            return Err(BuyError::InsufficientGoodQuantity { contained_quantity: cash.get_qty(), pre_agreed_quantity: agreed_quantity });
+            return Err(BuyError::InsufficientGoodQuantity { contained_quantity: cash.get_qty(), pre_agreed_quantity: agreed_price });
         }
 
         let profit = cash.split(agreed_price);
@@ -393,7 +393,7 @@ impl Market for ZSE {
         }
         if (self.goods[0].get_qty() - self.locked_qty[0]) < offer {
             print_metadata(logcode);
-            return Err(LockSellError::InsufficientDefaultGoodQuantityAvailable { offered_good_kind: kind_to_sell, offered_good_quantity: offer, available_good_quantity: self.goods[0].get_qty() });
+            return Err(LockSellError::InsufficientDefaultGoodQuantityAvailable { offered_good_kind: kind_to_sell, offered_good_quantity: quantity_to_sell, available_good_quantity: self.goods[0].get_qty() });
         }
         if acceptable_offer < offer {
             print_metadata(logcode);
@@ -425,7 +425,7 @@ impl Market for ZSE {
         self.external = false;
         self.on_event(Event { kind: EventKind::Sold, quantity: agreed_quantity, price: agreed_price, good_kind: good.get_kind() });
 
-        let logcode = format!("BUY-TOKEN:{}-ERROR", token.clone());
+        let logcode = format!("SELL-TOKEN:{}-ERROR", token.clone());
 
         if !self.token.contains_key(&*token) {
             print_metadata(logcode);
@@ -452,7 +452,7 @@ impl Market for ZSE {
         let ret = self.goods[0].split(agreed_price).unwrap();
         self.locked_qty[0] -= agreed_price;
 
-        let logcode = format!("BUY-TOKEN:{}-OK", token.clone());
+        let logcode = format!("SELL-TOKEN:{}-OK", token.clone());
         print_metadata(logcode);
 
         Ok(ret)
