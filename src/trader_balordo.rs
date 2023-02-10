@@ -16,7 +16,8 @@ use unitn_market_2022::good::consts::{DEFAULT_EUR_USD_EXCHANGE_RATE, DEFAULT_EUR
 
 
 const STARTING_BUDGET: f32 = 40000.0;
-const WINDOW_SIZE: i32 = 5; // 5 * 2 = 10 (min BFB)
+const BUFFER_SIZE: i32 = 5; // 5 * 2 = 10 (min BFB)
+const TRADER_DELAY_WRITE_MS:u64 = 200;
 
 pub struct ZSE_Trader {
     name: String,
@@ -302,7 +303,7 @@ impl ZSE_Trader {
             println!("...................................");
             println!("Locks: {}", self.transactions.len());
             println!("Budget: {}", self.get_budget());
-            alpha = self.transactions.len() as f32 / WINDOW_SIZE as f32;
+            alpha = self.transactions.len() as f32 / BUFFER_SIZE as f32;
             if thread_rng().gen_range(0.0..1.0) < alpha {
                 self.dropship(tx);
             } else {
@@ -380,5 +381,5 @@ fn write_metadata(goods: &Vec<Good>, tx: &Sender<String>) {
     }
     s.push('\n');
     tx.send(s).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    std::thread::sleep(std::time::Duration::from_millis(TRADER_DELAY_WRITE_MS));
 }
