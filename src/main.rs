@@ -1,60 +1,45 @@
-use std::cell::RefCell;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-use std::rc::Rc;
-use unitn_market_2022::market::{Market, market_test};
+use std::fs::File;
+use std::sync::{Arc, mpsc, Mutex};
+use std::{mem, thread};
+use std::io::{Read, Write};
+use std::time::Duration;
+use eframe::egui::plot::PlotPoint;
+use eframe::run_native;
 
-use sha256::digest;
-use unitn_market_2022::event::event::{Event, EventKind};
-
-pub mod market;
-mod trader;
 mod coolvisualizer;
-mod filereader;
+mod trader;
 mod trader_balordo;
-mod common;
-
-
-#[derive(Hash)]
-struct Request_good{
-    good_kind: unitn_market_2022::good::good_kind::GoodKind,
-    quantity: String,
-    offer: String,
-    name:String,
-}
 
 fn main() {
-    // trader marina
-    // let mut trader = trader::ZSE_Trader::new();
-    
-    // let mut count = 0;
-    // let mut state = true;
-    //  while state{
-    //     state = trader.strategy(count);
-    //     count += 1;
-    // }
-    // println!();
-    // println!();
-    // trader.print_goods_trader();
-    // trader.print_data();
-    // println!("tot cicli: {}", count);
+    let mut trader = trader_balordo::ZSE_Trader::new();
+    let mut visualizer = coolvisualizer::Visualizer::new();
+    let mut dataset = visualizer.dataset.clone();
+    let (tx, rx) = mpsc::channel();
 
-    //trader andy
-    //let mut trader = trader_balordo::ZSE_Trader::new();
-    //trader.trade();
-    //VISUALIZER STUFF DON'T TOUCH PLZ
-    //coolvisualizer::try_viz();
-}
+    thread::spawn(move || {
+        trader.trade(&tx);
+    });
 
-pub enum GK {
-    EUR,
-    YEN,
-    USD,
-    YUAN,
-}
+    thread::spawn(move || {
+        let mut count = 0;
+        for str in rx {
+            //append data to the vector to make it visible in the plot
+            dataset.lock().unwrap().append_point(PlotPoint { x: count as f64, y: coolvisualizer::get_budget(str.clone()) });
+            //print_vector(&dataset.lock().unwrap().get_points());
+            count += 1;
+            thread::sleep(Duration::from_millis(15));
+        }
+    });
 
-#[derive(Copy, Clone)]
-enum Mode {
-    Buy,
-    Sell,
+    run_native(
+        "Trader ZSE",
+        eframe::NativeOptions::default(),
+        Box::new(|_| Box::new(visualizer)),
+    )
+
+    /*
+    for received in rx {
+        println!("Got: {}", received);
+    }
+     */
 }

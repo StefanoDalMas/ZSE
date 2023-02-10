@@ -3,6 +3,7 @@ use std::rc::Rc;
 use rand::{Rng, thread_rng};
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::sync::mpsc::Sender;
 
 use rcnz_market::rcnz::RCNZ;
 use bfb::bfb_market::Bfb;
@@ -13,7 +14,6 @@ use unitn_market_2022::market::{Market, LockBuyError, LockSellError};
 use unitn_market_2022::{subscribe_each_other, wait_one_day};
 use unitn_market_2022::good::consts::{DEFAULT_EUR_USD_EXCHANGE_RATE, DEFAULT_EUR_YEN_EXCHANGE_RATE, DEFAULT_EUR_YUAN_EXCHANGE_RATE};
 
-use crate::common;
 
 const STARTING_BUDGET: f32 = 40000.0;
 const WINDOW_SIZE: i32 = 5; // 5 * 2 = 10 (min BFB)
@@ -48,6 +48,8 @@ struct Transaction {
     deadline: i32,
     priority: f32
 }
+
+unsafe impl Send for ZSE_Trader {} //mandatory in order to pass tx to the trader DONT TOUCH --needed by the compiler
 
 impl ZSE_Trader {
     pub fn new() -> Self {
@@ -200,24 +202,24 @@ impl ZSE_Trader {
     }
 
     // Buy & Sell functions
-    fn buy(&mut self, token: String, market: usize, kind: usize) -> bool {
+    fn buy(&mut self, token: String, market: usize, kind: usize, tx: &Sender<String>) -> bool {
         let res = self.markets[market].borrow_mut().buy(token, &mut self.goods[0]);
         match res {
             Ok(good) => {
                 self.goods[kind].merge(good).expect("Merge error in buy function");
-                write_metadata(&self.goods);
+                write_metadata(&self.goods, tx);
                 true
             }
             Err(_) => { false }
         }
     }
 
-    fn sell(&mut self, token: String, market: usize, kind: usize) -> bool {
+    fn sell(&mut self, token: String, market: usize, kind: usize, tx: &Sender<String>) -> bool {
         let res = self.markets[market].borrow_mut().sell(token, &mut self.goods[kind]);
         match res {
             Ok(good) => {
                 self.goods[0].merge(good).expect("Merge error in sell function");
-                write_metadata(&self.goods);
+                write_metadata(&self.goods, tx);
                 true
             }
             Err(_) => { false }
@@ -269,7 +271,7 @@ impl ZSE_Trader {
     }
 
     // Dropshipping implementation
-    fn dropship(&mut self) {
+    fn dropship(&mut self, tx: &Sender<String>) {
         let mut transaction_index = 0;
         for i in 0..self.transactions.len() {
             if self.transactions[i].priority > self.transactions[i].priority {
@@ -282,8 +284,8 @@ impl ZSE_Trader {
             let index_kind = get_index_by_goodkind(&self.transactions[transaction_index].good_kind);
             let market_buy = get_index_by_market(&self.transactions[transaction_index].lock_buy.market);
             let market_sell = get_index_by_market(&self.transactions[transaction_index].lock_sell.market);
-            if self.buy(self.transactions[transaction_index].lock_buy.token.clone(), market_buy, index_kind)
-            && self.sell(self.transactions[transaction_index].lock_sell.token.clone(), market_sell, index_kind) {
+            if self.buy(self.transactions[transaction_index].lock_buy.token.clone(), market_buy, index_kind, tx)
+                && self.sell(self.transactions[transaction_index].lock_sell.token.clone(), market_sell, index_kind, tx) {
                 self.transactions.remove(transaction_index);
             } else {
                 self.transactions[transaction_index].deadline = 0;
@@ -291,10 +293,9 @@ impl ZSE_Trader {
         }
     }
 
-    pub fn trade(&mut self) {
+    pub fn trade(&mut self, tx: &Sender<String>) {
         let mut alpha;
         let mut bankrupt= false;
-        init_file();
 
         while !bankrupt {
             self.update_best_prices();
@@ -303,7 +304,7 @@ impl ZSE_Trader {
             println!("Budget: {}", self.get_budget());
             alpha = self.transactions.len() as f32 / WINDOW_SIZE as f32;
             if thread_rng().gen_range(0.0..1.0) < alpha {
-                self.dropship();
+                self.dropship(tx);
             } else {
                 self.lock_best_profit();
             }
@@ -372,36 +373,12 @@ fn convert_to_eur(g: &Good) -> f32 {
     }
 }
 
-fn init_file() {
-    let file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(common::PATH_LOG);
-    match file {
-        Ok(file) => file,
-        Err(_) => panic!("Error opening / creating file"),
-    };
-}
-
-fn write_metadata(goods: &Vec<Good>) {
-    let file = OpenOptions::new()
-        .append(true)
-        .open(common::PATH_LOG);
-    match file {
-        Ok(mut file) => {
-            //let s = format!("EUR {} USD {} YEN {} YUAN {} \n",goods[0].get_qty(),goods[1].get_qty(),goods[2].get_qty(),goods[3].get_qty());
-            let mut s = "".to_string();
-            for g in goods{
-                s.push_str(&format!("{} {} ", g.get_kind(), convert_to_eur(g)));
-            }
-            s.push('\n');
-            let write = file.write_all(s.as_bytes());
-            match write {
-                Ok(_) => {}
-                Err(_) => println!("Error writing to file"),
-            }
-        }
-        Err(_) => println!("Error opening file"),
-    };
+fn write_metadata(goods: &Vec<Good>, tx: &Sender<String>) {
+    let mut s = "".to_string();
+    for g in goods{
+        s.push_str(&format!("{} {} ", g.get_kind(), convert_to_eur(g)));
+    }
+    s.push('\n');
+    tx.send(s).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(200));
 }
