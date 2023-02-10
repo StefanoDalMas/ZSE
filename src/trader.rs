@@ -43,7 +43,7 @@ token: String,
     new_qty_euro: f32,
     new_qty_gk: f32,
 }
-impl Display for Locking{
+impl Display for Locking{ //for degub
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} - {} - {}", self.token, self.market.borrow_mut().get_name(), self.time)
     }
