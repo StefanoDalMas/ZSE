@@ -13,13 +13,18 @@ mod trader;
 mod trader_balordo;
 
 fn main() {
-    let mut trader = trader_balordo::ZSE_Trader::new();
+    let mut trader1 = trader_balordo::ZSE_Trader::new();
     let mut visualizer = coolvisualizer::Visualizer::new();
     let mut dataset = visualizer.dataset.clone();
     let (tx, rx) = mpsc::channel();
 
+    // let mut trader2 = trader::ZSE_Trader::new();
+    // thread::spawn(move || {
+    //     trader2.trade(&tx);
+    // });
+
     thread::spawn(move || {
-        trader.trade(&tx);
+        trader1.trade(&tx);
     });
 
     thread::spawn(move || {

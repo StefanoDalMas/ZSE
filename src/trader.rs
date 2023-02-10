@@ -8,14 +8,18 @@ use rcnz_market::rcnz::RCNZ;
 use bfb::bfb_market::Bfb;
 use BVC::BVCMarket;
 
+use std::sync::mpsc::Sender;
+
 use unitn_market_2022::good::{good::Good, good_kind::GoodKind};
 use unitn_market_2022::market::{Market, LockBuyError, LockSellError, BuyError, MarketGetterError};
 use unitn_market_2022::{subscribe_each_other, wait_one_day};
 use unitn_market_2022::good::consts::{DEFAULT_EUR_USD_EXCHANGE_RATE, DEFAULT_EUR_YEN_EXCHANGE_RATE, DEFAULT_EUR_YUAN_EXCHANGE_RATE};
 
 
-const STARTING_CAPITAL: f32 = 100000.0;
+const STARTING_CAPITAL: f32 = 40000.0;
 const NUM_LOCK: i32 = 3;
+
+unsafe impl Send for ZSE_Trader {} //mandatory in order to pass tx to the trader DONT TOUCH --needed by the compiler
 pub struct ZSE_Trader {
     name: String,
     markets: Vec<Rc<RefCell<dyn Market>>>,
@@ -30,7 +34,6 @@ enum Mode {
     Buy,
     Sell,
 }
-
 pub struct Locking{ //keep info about tokens and locks that trader does
 token: String,
     market: Rc<RefCell<dyn Market>>,
@@ -148,7 +151,20 @@ impl ZSE_Trader {
 
     pub fn get_qty_good_trader(&mut self, i: usize) -> f32{ self.goods[i].get_qty() }
 
-    pub fn strategy(&mut self, x: i32) -> bool{
+    pub fn trade(&mut self, tx: &Sender<String>){
+        let mut count = 0;
+        let mut state = true;
+        while state{
+            state = self.strategy(count, tx);
+            count += 1;
+        }
+        println!();
+        self.print_goods_trader();
+        self.print_data();
+        println!("tot cicli: {}", count);
+    }
+
+    pub fn strategy(&mut self, x: i32, tx: &Sender<String>) -> bool{
         let mut lock: bool;
         let mut done = 0;
         if self.get_qty_good_trader(0) > 900.0 {
@@ -182,7 +198,10 @@ impl ZSE_Trader {
 
             if self.information.lock_buy % NUM_LOCK == 2 { //wait 'til 3 lock
                 while self.token_buy.len()>0 {
-                    if self.try_buy(){ self.information.buy += 1; }
+                    if self.try_buy(){ 
+                        self.information.buy += 1; 
+                        write_metadata(&self.goods, tx);
+                    }
                     else {
                         wait_one_day!(self.markets[0], self.markets[1], self.markets[2]);
                         self.information.wait += 1;
@@ -225,7 +244,10 @@ impl ZSE_Trader {
             if self.information.lock_sell>0 && self.information.lock_sell%(NUM_LOCK-1)==0{
                 while self.token_sell.len()>0 {
                     // println!("{}", self.token_sell.len());
-                    if self.try_sell(){ self.information.sell += 1; }
+                    if self.try_sell(){ 
+                        self.information.sell += 1; 
+                        write_metadata(&self.goods, tx);
+                    }
                     else {
                         wait_one_day!(self.markets[0], self.markets[1], self.markets[2]);
                         self.information.wait += 1;
@@ -420,7 +442,6 @@ impl ZSE_Trader {
     fn generate_qty(&mut self, market: &Rc<RefCell<dyn Market>>, gk: GoodKind, mode: Mode) -> f32{
         let mut max = 200.0;
         let min = 5.0;
-        let mut max_reached: f32;
         let mut qty: f32;
         let x = match mode {
             Mode::Buy =>{ 0 }, //arbitrary
@@ -503,4 +524,14 @@ fn convert_to_eur(good: &Good) -> f32 {
         GoodKind::YEN => good.get_qty() / DEFAULT_EUR_YEN_EXCHANGE_RATE,
         GoodKind::YUAN => good.get_qty() / DEFAULT_EUR_YUAN_EXCHANGE_RATE,
     }
+}
+
+fn write_metadata(goods: &Vec<Good>, tx: &Sender<String>) {
+    let mut s = "".to_string();
+    for g in goods{
+        s.push_str(&format!("{} {} ", g.get_kind(), convert_to_eur(g)));
+    }
+    s.push('\n');
+    tx.send(s).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(200));
 }
