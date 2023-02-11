@@ -97,7 +97,7 @@ impl ZSE_Trader {
         for mode in 0..2 {
             for good in 1..4 {
                 for market in 0..3 {
-                    for qty in [10.0, 50.0, 100.0] {
+                    for qty in [50.0, 100.0, 150.0] {
                         let unit_price;
                         if mode == 0 {
                             let m_good = self.markets[market].borrow().get_goods()[good].quantity;

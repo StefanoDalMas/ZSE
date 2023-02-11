@@ -53,7 +53,6 @@ fn set_native_options() -> eframe::NativeOptions {
         resizable: false,
         follow_system_theme: true,
         run_and_return: false,
-        centered: true,
         ..Default::default()
     }
 }

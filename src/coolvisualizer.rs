@@ -1,5 +1,5 @@
 use eframe::{App, CreationContext, egui, Frame, run_native};
-use eframe::egui::{CentralPanel, Context, SidePanel};
+use eframe::egui::{Align, CentralPanel, Color32, Context, Direction, Layout, SidePanel};
 use eframe::egui::plot::{Line, Plot, PlotPoints, PlotPoint, PlotPoints::Owned};
 
 use rand::Rng;
@@ -13,10 +13,12 @@ use std::fs::{OpenOptions, write};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::mpsc::Receiver;
 
-const WINSIZE: f32 = 5000.0;
-const MIN_Y: f32 = 40000.0;
-const MAX_Y: f32 = 80000.0;
+const WINSIZE: f32 = 10.0;
+const MIN_Y: f32 = 0.0;
+const MAX_Y: f32 = 45000.0;
 const DEFAULT_DELAY_MS: u8 = 100;
+
+//https://github.com/emilk/egui/issues/2307 AUTO BOUNDS NOT WORKING EGUI IS BROKEN
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -36,65 +38,71 @@ struct Args {
 
 #[derive(Debug, Clone)]
 pub struct Dataset {
-    capital :VecDeque<PlotPoint>,
-    eur: VecDeque<PlotPoint>,
-    usd: VecDeque<PlotPoint>,
-    yen: VecDeque<PlotPoint>,
-    yuan: VecDeque<PlotPoint>,
+    capital :Vec<PlotPoint>,
+    eur: Vec<PlotPoint>,
+    usd: Vec<PlotPoint>,
+    yen: Vec<PlotPoint>,
+    yuan: Vec<PlotPoint>,
 }
 
 impl Dataset{
-    fn new() -> Self { Dataset{ capital: VecDeque::new(), eur: VecDeque::new(), usd: VecDeque::new(), yen: VecDeque::new(), yuan: VecDeque::new() } }
+    fn new() -> Self { Dataset{ capital: Vec::new(), eur: Vec::new(), usd: Vec::new(), yen: Vec::new(), yuan: Vec::new() } }
 
     pub fn append_points(&mut self, message :String, count:f64) {
         //remove all old data
-        println!("{}",message);
-        println!("REMOVING data");
-        self.capital.retain(|x| x.x >= count - WINSIZE as f64 - 100.0);
-        self.eur.retain(|x| x.x >= count - WINSIZE as f64 - 100.0);
-        self.usd.retain(|x| x.x >= count - WINSIZE as f64 - 100.0);
-        self.yen.retain(|x| x.x >= count - WINSIZE as f64 - 100.0);
-        self.yuan.retain(|x| x.x >= count - WINSIZE as f64 - 100.0);
+        //self.capital.retain(|x| x.x >= count - WINSIZE as f64 - 100.0);
+        //self.eur.retain(|x| x.x >= count - WINSIZE as f64 - 100.0);
+        //self.usd.retain(|x| x.x >= count - WINSIZE as f64 - 100.0);
+        //self.yen.retain(|x| x.x >= count - WINSIZE as f64 - 100.0);
+        //self.yuan.retain(|x| x.x >= count - WINSIZE as f64 - 100.0);
         //update all data
-        println!("Removed data");
         let mut split = message.split_whitespace();
         let eur = split.clone().nth(1).unwrap().parse::<f64>().unwrap();
         let usd = split.clone().nth(3).unwrap().parse::<f64>().unwrap();
         let yen = split.clone().nth(5).unwrap().parse::<f64>().unwrap();
         let yuan = split.clone().nth(7).unwrap().parse::<f64>().unwrap();
-        println!("Values are");
-        println!("{} {} {} {}",eur, usd, yen, yuan);
-        self.capital.push_back(PlotPoint{
+        self.capital.push(PlotPoint{
             x:   count,
             y:   eur+usd+yen+yuan,
         });
-        self.eur.push_back(PlotPoint{
+        self.eur.push(PlotPoint{
             x:   count,
             y:   eur,
         });
-        self.usd.push_back(PlotPoint{
+        self.usd.push(PlotPoint{
             x:   count,
             y:   usd,
         });
-        self.yen.push_back(PlotPoint{
+        self.yen.push(PlotPoint{
             x:   count,
             y:   yen,
         });
-        self.yuan.push_back(PlotPoint{
+        self.yuan.push(PlotPoint{
             x:   count,
             y:   yuan,
         });
     }
 
-    pub fn get_points(&self) -> PlotPoints { Owned(Vec::from_iter(self.capital.iter().cloned())) }
-
-    //fn consume_data(&mut self) -> Option<String> {}
+    pub fn get_points_conditional(&self, state : &str) -> PlotPoints {
+        let mut res;
+        match state{
+            "CAPITAL" => res = Vec::from_iter(self.capital.iter().cloned()),
+            "EUR" => res = Vec::from_iter(self.eur.iter().cloned()),
+            "USD" => res = Vec::from_iter(self.usd.iter().cloned()),
+            "YEN" => res = Vec::from_iter(self.yen.iter().cloned()),
+            "YUAN" => res = Vec::from_iter(self.yuan.iter().cloned()),
+            _ => panic!("Invalid state")
+        }
+        Owned(res)
+    }
 }
 
 pub struct Visualizer {
     pub dataset: Arc<Mutex<Dataset>>,
     window_y: Vec<f32>,
     state: String,
+    widget1: bool,
+    widget2: bool,
 }
 
 
@@ -105,34 +113,60 @@ impl Visualizer {
             dataset: Arc::new(Mutex::new(Dataset::new())),
             window_y: vec![args.lower_bound,args.upper_bound],
             state: "CAPITAL".to_string(),
+            widget1: false,
+            widget2: false,
         }
     }
 }
 
 impl App for Visualizer {
-    fn update(&mut self, ctx: &eframe::egui::Context, _: &mut Frame) {
-        SidePanel::left("Prova").show(ctx, |ui|{
-           ui.label("Cazzo");
-        });
+    fn update(&mut self, ctx: &Context, _: &mut Frame) {
         SidePanel::right("Prova")
             .show_separator_line(false)
             .exact_width(1000.0)
             .show(ctx, |ui|{
-            let mut plot = Plot::new("cooltrader");
-
-            for &y in self.window_y.iter(){
-                plot = plot.include_y(y);
-            }
-            //match enum -> decide which vector to show
+            let mut plot = Plot::new("cooltrader").auto_bounds_y();
+            //getting which vector to show
+            let data_selected = self.dataset.lock().unwrap().get_points_conditional(self.state.as_str());
             plot.show(ui, |plot_ui| {
-                plot_ui.line(Line::new(self.dataset.lock().unwrap().get_points()));
+                plot_ui.line(Line::new(data_selected).width(5.0));
             });
         });
+        CentralPanel::default().show(ctx, |ui|{
+            ui.with_layout(Layout::left_to_right(Align::LEFT), |ui_widget|{
+                ui_widget.label("Trader1");
+                ui_widget.add(toggle(&mut self.widget1));
+                ui_widget.add_space(10.0);
+                ui_widget.label("Trader2");
+                ui_widget.add(toggle(&mut self.widget2));
+            });
+            ui.with_layout(Layout::top_down_justified(Align::Center), |ui_centered|{
+                ui_centered.separator();
+                if ui_centered.radio(if self.state == "CAPITAL".to_string() {true} else {false},"CAPITAL").clicked() {
+                    self.state = "CAPITAL".to_string();
+                };
+                if ui_centered.radio(if self.state == "EUR".to_string() {true} else {false},"EUR").clicked() {
+                    self.state = "EUR".to_string();
+                };
+                if ui_centered.radio(if self.state == "USD".to_string() {true} else {false},"USD").clicked() {
+                    self.state = "USD".to_string();
+                };
+                if ui_centered.radio(if self.state == "YEN".to_string() {true} else {false},"YEN").clicked() {
+                    self.state = "YEN".to_string();
+                };
+                if ui_centered.radio(if self.state == "YUAN".to_string() {true} else {false},"YUAN").clicked() {
+                    self.state = "YUAN".to_string();
+                };
+            });
+            ui.with_layout(Layout::bottom_up(Align::Center),|ui_bottom|{
+                ui_bottom.hyperlink_to(format!("{} ZSE's GitHub",egui::special_emojis::GITHUB ),"https://github.com/StefanoDalMas/ZSE");
+                ui_bottom.separator();
+            })
+
+        });
         ctx.request_repaint();
-        //button handler -> enum set
     }
 }
-
 
 //debug functions
 fn print_point(point: &PlotPoint){
@@ -141,4 +175,30 @@ fn print_point(point: &PlotPoint){
 
 fn print_vector(vector: &PlotPoints){
     vector.points().iter().for_each(|x| print_point(x));
+}
+
+pub fn toggle_ui(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
+    let desired_size = ui.spacing().interact_size.y * egui::vec2(2.0, 1.0);
+    let (rect, mut response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
+    if response.clicked() {
+        *on = !*on;
+        response.mark_changed(); // report back that the value changed
+    }
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, *on, ""));
+    if ui.is_rect_visible(rect) {
+        let how_on = ui.ctx().animate_bool(response.id, *on);
+        let visuals = ui.style().interact_selectable(&response, *on);
+        let rect = rect.expand(visuals.expansion);
+        let radius = 0.5 * rect.height();
+        ui.painter()
+            .rect(rect, radius, visuals.bg_fill, visuals.bg_stroke);
+        let circle_x = egui::lerp((rect.left() + radius)..=(rect.right() - radius), how_on);
+        let center = egui::pos2(circle_x, rect.center().y);
+        ui.painter()
+            .circle(center, 0.75 * radius, visuals.bg_fill, visuals.fg_stroke);
+    }
+    response
+}
+pub fn toggle(on: &mut bool) -> impl egui::Widget + '_ {
+    move |ui: &mut egui::Ui| toggle_ui(ui, on)
 }
