@@ -53,38 +53,56 @@ struct Transaction {
 unsafe impl Send for ZSE_Trader {} //mandatory in order to pass tx to the trader DONT TOUCH --needed by the compiler
 
 impl ZSE_Trader {
-    pub fn new() -> Self {
+
+    fn default() -> Self{
         let name = "ZSE_Trader".to_string();
         let mut markets = Vec::new();
-        markets.push(RCNZ::new_random());
-        markets.push(Bfb::new_random());
-        markets.push(BVCMarket::new_random());
-        subscribe_each_other!(markets[0], markets[1], markets[2]);
+        let goods = Vec::new();
+        let mut best_prices = vec![vec![BestPrice{ price: 0.0, quantity: 0.0, market: "".to_string() }; 4]; 3];
+        best_prices[0] = vec![BestPrice{ price: f32::MAX, quantity: 0.0, market: "".to_string() }; 4];
+        best_prices[1] = vec![BestPrice{ price: f32::MIN, quantity: 0.0, market: "".to_string() }; 4];
+        let mut transactions = Vec::new();
+        let days = 0;
+        Self { name, markets, best_prices, goods, transactions, days }
+    }
+    pub fn new() -> Self {
+        let mut res= Self::default();
+        res.markets.push(RCNZ::new_random());
+        res.markets.push(Bfb::new_random());
+        res.markets.push(BVCMarket::new_random());
+        subscribe_each_other!(res.markets[0], res.markets[1], res.markets[2]);
 
         let mut remaining = STARTING_BUDGET;
         let mut tmp = vec![0.0; 4];
-        let mut random_num;
-
         for i in 0..3 {
-            random_num = rand::thread_rng().gen_range(0.0..remaining);
-            tmp[i] = random_num;
-            remaining -= random_num;
+            tmp[i] = thread_rng().gen_range(0.0..remaining);
+            remaining -= tmp[i];
         }
         tmp[3] = remaining;
 
-        let goods = vec![
+        res.goods = vec![
             Good::new(GoodKind::EUR, tmp[0]),
             Good::new(GoodKind::USD, tmp[1]  * DEFAULT_EUR_USD_EXCHANGE_RATE),
             Good::new(GoodKind::YEN, tmp[2] * DEFAULT_EUR_YEN_EXCHANGE_RATE),
             Good::new(GoodKind::YUAN, tmp[3] * DEFAULT_EUR_YUAN_EXCHANGE_RATE),
         ];
+        res
+    }
 
-        let mut best_prices = vec![vec![BestPrice{ price: 0.0, quantity: 0.0, market: "".to_string() }; 4]; 2];
-        best_prices[0] = vec![BestPrice{ price: f32::MAX, quantity: 0.0, market: "".to_string() }; 4];
-        best_prices[1] = vec![BestPrice{ price: f32::MIN, quantity: 0.0, market: "".to_string() }; 4];
-        let transactions = Vec::new();
+    pub fn new_with_quantities(data: Vec<f32>,m1:Vec<f32>,m2:Vec<f32>,m3:Vec<f32>) -> Self{
+        let mut res = Self::default();
+        res.markets.push(RCNZ::new_with_quantities(m1[0],m1[1],m1[2],m1[3]));
+        res.markets.push(Bfb::new_with_quantities(m2[0],m2[1],m2[2],m2[3]));
+        res.markets.push(BVCMarket::new_with_quantities(m3[0],m3[1],m3[2],m3[3]));
+        subscribe_each_other!(res.markets[0], res.markets[1], res.markets[2]);
 
-        Self { name, markets, best_prices, goods, transactions, days: 0 }
+         res.goods = vec![
+            Good::new(GoodKind::EUR, data[0]),
+            Good::new(GoodKind::USD, data[1] * DEFAULT_EUR_USD_EXCHANGE_RATE),
+            Good::new(GoodKind::YEN, data[2] * DEFAULT_EUR_YEN_EXCHANGE_RATE),
+            Good::new(GoodKind::YUAN, data[3] * DEFAULT_EUR_YUAN_EXCHANGE_RATE),
+        ];
+        res
     }
 
     pub fn get_name(&self) -> &String { &self.name }
@@ -97,7 +115,7 @@ impl ZSE_Trader {
         for mode in 0..2 {
             for good in 1..4 {
                 for market in 0..3 {
-                    for qty in [50.0, 100.0, 150.0] {
+                    for qty in [10.0,100.0,500.0,1000.0,10000.0] {
                         let unit_price;
                         if mode == 0 {
                             let m_good = self.markets[market].borrow().get_goods()[good].quantity;

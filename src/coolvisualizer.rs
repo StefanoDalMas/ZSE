@@ -1,9 +1,9 @@
 use eframe::{App, CreationContext, egui, Frame, run_native};
-use eframe::egui::{Align, CentralPanel, Color32, Context, Direction, Layout, SidePanel};
+use eframe::egui::{Align, CentralPanel, Color32, Context, Direction, FontFamily, Layout, SidePanel};
 use eframe::egui::plot::{Line, Plot, PlotPoints, PlotPoint, PlotPoints::Owned};
+use crate::egui::RichText;
 
 use rand::Rng;
-use clap::Parser;
 use std::sync::{Arc, Mutex};
 use std::{fmt, thread};
 use std::fmt::Formatter;
@@ -12,29 +12,11 @@ use std::collections::VecDeque;
 use std::fs::{OpenOptions, write};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::mpsc::Receiver;
+use clap::Parser;
 
-const WINSIZE: f32 = 10.0;
-const MIN_Y: f32 = 0.0;
-const MAX_Y: f32 = 45000.0;
-const DEFAULT_DELAY_MS: u8 = 100;
 
 //https://github.com/emilk/egui/issues/2307 AUTO BOUNDS NOT WORKING EGUI IS BROKEN
 
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Args {
-    #[arg(short, long, default_value_t = WINSIZE)]
-    pub window_size: f32,
-
-    #[arg(short, long, default_value_t = MIN_Y)]
-    pub lower_bound: f32,
-
-    #[arg(short,long, default_value_t = MAX_Y)]
-    pub upper_bound: f32,
-
-    #[arg(short, long, default_value_t = DEFAULT_DELAY_MS)]
-    pub delay_ms: u8,
-}
 
 #[derive(Debug, Clone)]
 pub struct Dataset {
@@ -92,7 +74,6 @@ impl Dataset{
 pub struct Visualizer {
     pub dataset_dropship: Arc<Mutex<Dataset>>,
     pub dataset_3m: Arc<Mutex<Dataset>>,
-    window_y: Vec<f32>,
     state: String,
     widget1: bool,
     widget2: bool,
@@ -101,20 +82,19 @@ pub struct Visualizer {
 
 impl Visualizer {
     pub fn new() -> Self {
-        let args = Args::parse();
         Visualizer {
             dataset_dropship: Arc::new(Mutex::new(Dataset::new())),
             dataset_3m: Arc::new(Mutex::new(Dataset::new())),
-            window_y: vec![args.lower_bound,args.upper_bound],
             state: "CAPITAL".to_string(),
             widget1: true,
-            widget2: false,
+            widget2: true,
         }
     }
 }
 
 impl App for Visualizer {
     fn update(&mut self, ctx: &Context, _: &mut Frame) {
+        let args = crate::Args::parse();
         SidePanel::right("Prova")
             .show_separator_line(false)
             .exact_width(1000.0)
@@ -160,6 +140,8 @@ impl App for Visualizer {
             });
             ui.with_layout(Layout::bottom_up(Align::Center),|ui_bottom|{
                 ui_bottom.hyperlink_to(format!("{} ZSE's GitHub",egui::special_emojis::GITHUB ),"https://github.com/StefanoDalMas/ZSE");
+                ui_bottom.separator();
+                ui_bottom.label(RichText::new(format!("Hello {}!",args.name)).family(FontFamily::Monospace).size(15.0));
                 ui_bottom.separator();
             })
 

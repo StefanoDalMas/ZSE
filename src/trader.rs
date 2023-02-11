@@ -87,24 +87,45 @@ impl PartialOrd for Value{
 }
 
 impl ZSE_Trader {
-    pub fn new() -> Self {
+
+    fn default() -> Self{
         let name = "ZSE_Trader".to_string();
         let mut markets = Vec::new();
-        markets.push(RCNZ::new_random());
-        markets.push(Bfb::new_random());
-        markets.push(BVCMarket::new_random());
-        subscribe_each_other!(markets[0], markets[1], markets[2]);
         let prices = vec![vec![vec![0.0; 4]; 3]; 2];
-        let goods = vec![
+        let goods = vec![];
+        let token_buy = Vec::new();
+        let token_sell = Vec::new();
+        let information = Data::new();
+        Self { name, markets, prices, goods, token_buy, token_sell, information }
+    }
+    pub fn new() -> Self {
+        let mut res = Self::default();
+        res.markets.push(RCNZ::new_random());
+        res.markets.push(Bfb::new_random());
+        res.markets.push(BVCMarket::new_random());
+        subscribe_each_other!(res.markets[0], res.markets[1], res.markets[2]);
+        res.goods = vec![
             Good::new(GoodKind::EUR, STARTING_CAPITAL),
             Good::new(GoodKind::USD, 0.0),
             Good::new(GoodKind::YEN, 0.0),
             Good::new(GoodKind::YUAN, 0.0),
         ];
-        let token_buy = Vec::new();
-        let token_sell = Vec::new();
-        let information = Data::new();
-        Self { name, markets, prices, goods, token_buy, token_sell, information }
+        res
+    }
+    pub fn new_with_quantities(data: Vec<f32>,m1:Vec<f32>,m2:Vec<f32>,m3:Vec<f32>) -> Self{
+        let mut res = Self::default();
+        res.markets.push(RCNZ::new_with_quantities(m1[0],m1[1],m1[2],m1[3]));
+        res.markets.push(Bfb::new_with_quantities(m2[0],m2[1],m2[2],m2[3]));
+        res.markets.push(BVCMarket::new_with_quantities(m3[0],m3[1],m3[2],m3[3]));
+        subscribe_each_other!(res.markets[0], res.markets[1], res.markets[2]);
+
+        res.goods = vec![
+            Good::new(GoodKind::EUR, data[0]),
+            Good::new(GoodKind::USD, data[1] * DEFAULT_EUR_USD_EXCHANGE_RATE),
+            Good::new(GoodKind::YEN, data[2] * DEFAULT_EUR_YEN_EXCHANGE_RATE),
+            Good::new(GoodKind::YUAN, data[3] * DEFAULT_EUR_YUAN_EXCHANGE_RATE),
+        ];
+        res
     }
 
     pub fn get_name(&self) -> &String { &self.name }
