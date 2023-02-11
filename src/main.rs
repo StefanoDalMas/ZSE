@@ -1,35 +1,31 @@
-//MAIN
-
 use std::fs::File;
-use std::sync::{Arc, mpsc, Mutex};
-use std::{mem, thread};
 use std::io::{Read, Write};
 use std::string::ToString;
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
+use std::{mem, thread};
+
+use bfb::bfb_market::Bfb;
+use clap::Parser;
 use eframe::egui::plot::PlotPoint;
 use eframe::{egui, run_native};
+use rand::{thread_rng, Rng};
 use rcnz_market::rcnz::RCNZ;
-use unitn_market_2022::market::Market;
-use bfb::bfb_market::Bfb;
-use BVC::BVCMarket;
-use rand::{Rng, thread_rng};
 use unitn_market_2022::market::good_label::GoodLabel;
-use clap::Parser;
-
+use unitn_market_2022::market::Market;
+use BVC::BVCMarket;
 
 mod coolvisualizer;
 mod trader;
 mod trader_balordo;
 
-
-const TX_DELAY_MS:u64 = 50;
+const TX_DELAY_MS: u64 = 200;
 const STARTING_BUDGET: f32 = 40000.0;
 
 //Clap
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
-
     #[arg(short, long, default_value_t = STARTING_BUDGET)]
     budget: f32,
 
@@ -37,7 +33,7 @@ pub struct Args {
     delay: u64,
 
     #[arg(short, long, default_value = "from ZSE")]
-    name : String,
+    name: String,
 }
 
 fn main() {
@@ -50,7 +46,6 @@ fn main() {
     let values_rcnz = rcnz.borrow().get_goods();
     let values_bvc = bvc.borrow().get_goods();
 
-
     //trader init
     let mut remaining = args.budget;
     let mut tmp = vec![0.0; 4];
@@ -60,8 +55,18 @@ fn main() {
     }
     tmp[3] = remaining;
 
-    let mut trader1 = trader_balordo::ZSE_Trader::new_with_quantities(tmp.clone(),parse(&values_rcnz),parse(&values_bfb),parse(&values_bvc));
-    let mut trader2 = trader::ZSE_Trader::new_with_quantities(tmp.clone(),parse(&values_rcnz),parse(&values_bfb),parse(&values_bvc));
+    let mut trader1 = trader_balordo::ZSE_Trader::new_with_quantities(
+        tmp.clone(),
+        parse(&values_rcnz),
+        parse(&values_bfb),
+        parse(&values_bvc),
+    );
+    let mut trader2 = trader::ZSE_Trader::new_with_quantities(
+        tmp.clone(),
+        parse(&values_rcnz),
+        parse(&values_bfb),
+        parse(&values_bvc),
+    );
 
     //visualizer init
     let mut visualizer = coolvisualizer::Visualizer::new();
@@ -87,23 +92,30 @@ fn main() {
             //append data to the vector to make it visible in the plot
             let mut data = str.split_whitespace().collect::<Vec<&str>>();
             let id = data.remove(0);
-            if id == "1"{
-                dataset_dropship.lock().unwrap().append_points(data.clone(),count as f64);
+            if id == "1" {
+                dataset_dropship
+                    .lock()
+                    .unwrap()
+                    .append_points(data.clone(), count as f64);
             }
-            if id == "2"{
-                dataset_3m.lock().unwrap().append_points(data.clone(),count as f64);
+            if id == "2" {
+                dataset_3m
+                    .lock()
+                    .unwrap()
+                    .append_points(data.clone(), count as f64);
             }
 
             //print_vector(&dataset.lock().unwrap().get_points());
             count += 1;
-            thread::sleep(Duration::from_millis(TX_DELAY_MS));
+            thread::sleep(Duration::from_millis(args.delay));
         }
     });
     run_native(
         "Trader ZSE",
         native_options,
         Box::new(|_| Box::new(visualizer)),
-    ).expect("Failed to run app");
+    )
+    .expect("Failed to run app");
 }
 
 fn set_native_options() -> eframe::NativeOptions {
@@ -116,9 +128,9 @@ fn set_native_options() -> eframe::NativeOptions {
     }
 }
 
-fn parse(v:&Vec<GoodLabel>) -> Vec<f32>{
+fn parse(v: &Vec<GoodLabel>) -> Vec<f32> {
     let mut res = vec![0.0; 4];
-    for i in 0..4{
+    for i in 0..4 {
         res[i] = v[i].quantity;
     }
     res

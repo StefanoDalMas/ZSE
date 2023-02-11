@@ -1,71 +1,68 @@
-use eframe::{App, CreationContext, egui, Frame, run_native};
-use eframe::egui::{Align, CentralPanel, Color32, Context, Direction, FontFamily, Layout, SidePanel};
-use eframe::egui::plot::{Line, Plot, PlotPoints, PlotPoint, PlotPoints::Owned};
-use crate::egui::RichText;
-
-use rand::Rng;
-use std::sync::{Arc, Mutex};
-use std::{fmt, thread};
-use std::fmt::Formatter;
-use std::thread::sleep;
 use std::collections::VecDeque;
-use std::fs::{OpenOptions, write};
+use std::fmt::Formatter;
+use std::fs::{write, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::mpsc::Receiver;
-use clap::Parser;
+use std::sync::{Arc, Mutex};
+use std::thread::sleep;
+use std::{fmt, thread};
 
+use clap::Parser;
+use eframe::egui::plot::{Line, Plot, PlotPoint, PlotPoints, PlotPoints::Owned};
+use eframe::egui::{
+    Align, CentralPanel, Color32, Context, Direction, FontFamily, Layout, SidePanel,
+};
+use eframe::{egui, run_native, App, CreationContext, Frame};
+use rand::Rng;
+
+use crate::egui::RichText;
 
 //https://github.com/emilk/egui/issues/2307 AUTO BOUNDS NOT WORKING EGUI IS BROKEN
 
-
 #[derive(Debug, Clone)]
 pub struct Dataset {
-    capital :Vec<PlotPoint>,
+    capital: Vec<PlotPoint>,
     eur: Vec<PlotPoint>,
     usd: Vec<PlotPoint>,
     yen: Vec<PlotPoint>,
     yuan: Vec<PlotPoint>,
 }
 
-impl Dataset{
-    fn new() -> Self { Dataset{ capital: Vec::new(), eur: Vec::new(), usd: Vec::new(), yen: Vec::new(), yuan: Vec::new() } }
+impl Dataset {
+    fn new() -> Self {
+        Dataset {
+            capital: Vec::new(),
+            eur: Vec::new(),
+            usd: Vec::new(),
+            yen: Vec::new(),
+            yuan: Vec::new(),
+        }
+    }
 
-    pub fn append_points(&mut self, message :Vec<&str>, count:f64) {
+    pub fn append_points(&mut self, message: Vec<&str>, count: f64) {
         let eur = message[0].parse::<f64>().unwrap();
         let usd = message[1].parse::<f64>().unwrap();
         let yen = message[2].parse::<f64>().unwrap();
         let yuan = message[3].parse::<f64>().unwrap();
-        self.capital.push(PlotPoint{
-            x:   count,
-            y:   eur+usd+yen+yuan,
+        self.capital.push(PlotPoint {
+            x: count,
+            y: eur + usd + yen + yuan,
         });
-        self.eur.push(PlotPoint{
-            x:   count,
-            y:   eur,
-        });
-        self.usd.push(PlotPoint{
-            x:   count,
-            y:   usd,
-        });
-        self.yen.push(PlotPoint{
-            x:   count,
-            y:   yen,
-        });
-        self.yuan.push(PlotPoint{
-            x:   count,
-            y:   yuan,
-        });
+        self.eur.push(PlotPoint { x: count, y: eur });
+        self.usd.push(PlotPoint { x: count, y: usd });
+        self.yen.push(PlotPoint { x: count, y: yen });
+        self.yuan.push(PlotPoint { x: count, y: yuan });
     }
 
-    pub fn get_points_conditional(&self, state : &str) -> PlotPoints {
+    pub fn get_points_conditional(&self, state: &str) -> PlotPoints {
         let mut res;
-        match state{
+        match state {
             "CAPITAL" => res = Vec::from_iter(self.capital.iter().cloned()),
             "EUR" => res = Vec::from_iter(self.eur.iter().cloned()),
             "USD" => res = Vec::from_iter(self.usd.iter().cloned()),
             "YEN" => res = Vec::from_iter(self.yen.iter().cloned()),
             "YUAN" => res = Vec::from_iter(self.yuan.iter().cloned()),
-            _ => panic!("Invalid state")
+            _ => panic!("Invalid state"),
         }
         Owned(res)
     }
@@ -78,7 +75,6 @@ pub struct Visualizer {
     widget1: bool,
     widget2: bool,
 }
-
 
 impl Visualizer {
     pub fn new() -> Self {
@@ -98,67 +94,134 @@ impl App for Visualizer {
         SidePanel::right("Prova")
             .show_separator_line(false)
             .exact_width(1000.0)
-            .show(ctx, |ui|{
-            let mut plot = Plot::new("cooltrader").auto_bounds_y();
-            //getting which vector to show
-            let data_dropship = self.dataset_dropship.lock().unwrap().get_points_conditional(self.state.as_str());
-            let data_3m = self.dataset_3m.lock().unwrap().get_points_conditional(self.state.as_str());
-            plot.show(ui, |plot_ui| {
-                if self.widget1{
-                    plot_ui.line(Line::new(data_dropship).width(5.0));
-                }
-                if self.widget2{
-                    plot_ui.line(Line::new(data_3m).width(5.0).color(Color32::from_rgb(252, 15, 192)));
-                }
+            .show(ctx, |ui| {
+                let mut plot = Plot::new("cooltrader").auto_bounds_y();
+                //getting which vector to show
+                let data_dropship = self
+                    .dataset_dropship
+                    .lock()
+                    .unwrap()
+                    .get_points_conditional(self.state.as_str());
+                let data_3m = self
+                    .dataset_3m
+                    .lock()
+                    .unwrap()
+                    .get_points_conditional(self.state.as_str());
+                plot.show(ui, |plot_ui| {
+                    if self.widget1 {
+                        plot_ui.line(Line::new(data_dropship).width(5.0));
+                    }
+                    if self.widget2 {
+                        plot_ui.line(
+                            Line::new(data_3m)
+                                .width(5.0)
+                                .color(Color32::from_rgb(252, 15, 192)),
+                        );
+                    }
+                });
             });
-        });
-        CentralPanel::default().show(ctx, |ui|{
-            ui.with_layout(Layout::left_to_right(Align::LEFT), |ui_widget|{
+        CentralPanel::default().show(ctx, |ui| {
+            ui.with_layout(Layout::left_to_right(Align::LEFT), |ui_widget| {
                 ui_widget.label("Trader1");
                 ui_widget.add(toggle(&mut self.widget1));
                 ui_widget.add_space(10.0);
                 ui_widget.label("Trader2");
                 ui_widget.add(toggle(&mut self.widget2));
             });
-            ui.with_layout(Layout::top_down_justified(Align::Center), |ui_centered|{
+            ui.with_layout(Layout::top_down_justified(Align::Center), |ui_centered| {
                 ui_centered.separator();
-                if ui_centered.radio(if self.state == "CAPITAL".to_string() {true} else {false},"CAPITAL").clicked() {
+                if ui_centered
+                    .radio(
+                        if self.state == "CAPITAL".to_string() {
+                            true
+                        } else {
+                            false
+                        },
+                        "CAPITAL",
+                    )
+                    .clicked()
+                {
                     self.state = "CAPITAL".to_string();
                 };
-                if ui_centered.radio(if self.state == "EUR".to_string() {true} else {false},"EUR").clicked() {
+                if ui_centered
+                    .radio(
+                        if self.state == "EUR".to_string() {
+                            true
+                        } else {
+                            false
+                        },
+                        "EUR",
+                    )
+                    .clicked()
+                {
                     self.state = "EUR".to_string();
                 };
-                if ui_centered.radio(if self.state == "USD".to_string() {true} else {false},"USD").clicked() {
+                if ui_centered
+                    .radio(
+                        if self.state == "USD".to_string() {
+                            true
+                        } else {
+                            false
+                        },
+                        "USD",
+                    )
+                    .clicked()
+                {
                     self.state = "USD".to_string();
                 };
-                if ui_centered.radio(if self.state == "YEN".to_string() {true} else {false},"YEN").clicked() {
+                if ui_centered
+                    .radio(
+                        if self.state == "YEN".to_string() {
+                            true
+                        } else {
+                            false
+                        },
+                        "YEN",
+                    )
+                    .clicked()
+                {
                     self.state = "YEN".to_string();
                 };
-                if ui_centered.radio(if self.state == "YUAN".to_string() {true} else {false},"YUAN").clicked() {
+                if ui_centered
+                    .radio(
+                        if self.state == "YUAN".to_string() {
+                            true
+                        } else {
+                            false
+                        },
+                        "YUAN",
+                    )
+                    .clicked()
+                {
                     self.state = "YUAN".to_string();
                 };
             });
-            ui.with_layout(Layout::bottom_up(Align::Center),|ui_bottom|{
-                ui_bottom.hyperlink_to(format!("{} ZSE's GitHub",egui::special_emojis::GITHUB ),"https://github.com/StefanoDalMas/ZSE");
+            ui.with_layout(Layout::bottom_up(Align::Center), |ui_bottom| {
+                ui_bottom.hyperlink_to(
+                    format!("{} ZSE's GitHub", egui::special_emojis::GITHUB),
+                    "https://github.com/StefanoDalMas/ZSE",
+                );
                 ui_bottom.separator();
-                ui_bottom.label(RichText::new(format!("Hello {}!",args.name)).family(FontFamily::Monospace).size(15.0));
+                ui_bottom.label(
+                    RichText::new(format!("Hello {}!", args.name))
+                        .family(FontFamily::Monospace)
+                        .size(15.0),
+                );
                 ui_bottom.separator();
             })
-
         });
         ctx.request_repaint();
     }
 }
 
 //debug functions
-fn print_point(point: &PlotPoint){
+fn print_point(point: &PlotPoint) {
     println!("x: {}, y: {}", point.x, point.y);
 }
 
-fn print_vector(vector: &PlotPoints){
+fn print_vector(vector: &PlotPoints) {
     vector.points().iter().for_each(|x| print_point(x));
 }
-
 
 //Custom Widget implementation
 pub fn toggle_ui(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
