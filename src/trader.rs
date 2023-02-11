@@ -18,6 +18,7 @@ use unitn_market_2022::good::consts::{DEFAULT_EUR_USD_EXCHANGE_RATE, DEFAULT_EUR
 
 const STARTING_CAPITAL: f32 = 40000.0;
 const NUM_LOCK: i32 = 3;
+const TRADER_DELAY_WRITE_MS:u64 = 200;
 
 unsafe impl Send for ZSE_Trader {} //mandatory in order to pass tx to the trader DONT TOUCH --needed by the compiler
 pub struct ZSE_Trader {
@@ -158,10 +159,9 @@ impl ZSE_Trader {
             state = self.strategy(count, tx);
             count += 1;
         }
-        println!();
-        self.print_goods_trader();
+        //self.print_goods_trader();
         self.print_data();
-        println!("tot cicli: {}", count);
+        //println!("tot cicli: {}", count);
     }
 
     pub fn strategy(&mut self, x: i32, tx: &Sender<String>) -> bool{
@@ -186,12 +186,12 @@ impl ZSE_Trader {
 
             if lock {
                 self.information.lock_buy += 1;
-                println!("want to buy: {} -> {}", gk_buy, mb.borrow_mut().get_name());
+                //println!("want to buy: {} -> {}", gk_buy, mb.borrow_mut().get_name());
             }
             else {
                 wait_one_day!(self.markets[0], self.markets[1], self.markets[2]);
                 self.information.wait += 1;
-                println!("\nWAITING LOCK-BUY\n");
+                //println!("\nWAITING LOCK-BUY\n");
             }
             self.update_time();
             self.update_all_prices();
@@ -205,16 +205,16 @@ impl ZSE_Trader {
                     else {
                         wait_one_day!(self.markets[0], self.markets[1], self.markets[2]);
                         self.information.wait += 1;
-                        println!("\nWAITING BUY\n");
+                        //println!("\nWAITING BUY\n");
                     }
                     self.update_time();
                     self.update_all_prices();
                 }
             }
-            println!();
+            //println!();
             done = 1;
         }
-        println!();
+        //println!();
         if self.get_qty_good_trader(1) > 200.0 || self.get_qty_good_trader(2) > 200.0 || self.get_qty_good_trader(3) > 200.0 {
             //SELL
             let index_gk_sell = rand::thread_rng().gen_range(0..18)%3+1; //chose randomly between USD, YEN, YUAN
@@ -236,7 +236,7 @@ impl ZSE_Trader {
             else {
                 wait_one_day!(self.markets[0], self.markets[1], self.markets[2]);
                 self.information.wait += 1;
-                println!("\nWAITING LOCK-SELL\n");
+                //println!("\nWAITING LOCK-SELL\n");
             }
             self.update_time();
             self.update_all_prices();
@@ -251,7 +251,7 @@ impl ZSE_Trader {
                     else {
                         wait_one_day!(self.markets[0], self.markets[1], self.markets[2]);
                         self.information.wait += 1;
-                        println!("\nWAITING SELL\n");
+                        //println!("\nWAITING SELL\n");
                     }
                     self.update_time();
                     self.update_all_prices();
@@ -377,7 +377,7 @@ impl ZSE_Trader {
             let res = self.goods[get_index_by_goodkind(&gk)].merge(Good::new(gk, qty));
             if res.is_err(){ panic!("Merge Error: {:?}", res); }
 
-            println!("buy {:?} with {}: {:?}\t", gk, market.borrow_mut().get_name(), buy);
+            //println!("buy {:?} with {}: {:?}\t", gk, market.borrow_mut().get_name(), buy);
             // println!("{} -- {}\n", self.goods[0], self.goods[get_index_by_goodkind(&gk)]);
             result = true;
         }
@@ -403,7 +403,7 @@ impl ZSE_Trader {
 
             string = market.borrow_mut().lock_sell(gk, qty, offer, self.get_name().clone());
             if let Ok(token) = string {
-                println!("want to sell: {} -> {:?}; {} for {}", gk, market.borrow_mut().get_name(), qty, offer);
+                //println!("want to sell: {} -> {:?}; {} for {}", gk, market.borrow_mut().get_name(), qty, offer);
                 // println!("our: {}", self.get_qty_good_trader(get_index_by_goodkind(&gk)));
                 let new_qty_euro = self.goods[0].get_qty() + offer;
                 let new_qty_gk_sell =  self.goods[get_index_by_goodkind(&gk)].get_qty() - qty;
@@ -430,7 +430,7 @@ impl ZSE_Trader {
             let res = self.goods[0].merge(Good::new(GoodKind::EUR, qty));
             if res.is_err(){ panic!("Merge Error: {:?}", res); }
 
-            println!("sell {:?} with {}: {:?}\t", gk, market.borrow_mut().get_name(), sell);
+            //println!("sell {:?} with {}: {:?}\t", gk, market.borrow_mut().get_name(), sell);
             // println!("{} -- {}\n", self.goods[0], self.goods[get_index_by_goodkind(&gk)]);
             self.update_all_prices();
             result = true;
@@ -527,11 +527,11 @@ fn convert_to_eur(good: &Good) -> f32 {
 }
 
 fn write_metadata(goods: &Vec<Good>, tx: &Sender<String>) {
-    let mut s = "".to_string();
+    let mut s = "2 ".to_string();
     for g in goods{
-        s.push_str(&format!("{} {} ", g.get_kind(), convert_to_eur(g)));
+        s.push_str(&format!("{} ", convert_to_eur(g)));
     }
     s.push('\n');
     tx.send(s).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    std::thread::sleep(std::time::Duration::from_millis(TRADER_DELAY_WRITE_MS));
 }

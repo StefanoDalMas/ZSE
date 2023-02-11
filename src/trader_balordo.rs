@@ -227,7 +227,7 @@ impl ZSE_Trader {
         }
     }
 
-    // Locking logic
+    // Locking logic -- best one but market values are unbalanced
     fn lock_best_profit(&mut self) {
         let mut best_good = 0;
         let mut best_profit = 0.0;
@@ -271,6 +271,39 @@ impl ZSE_Trader {
         }
     }
 
+    //Lock dumb
+    fn lock_profits(&mut self){
+        for i in 1..4{
+            let mut transaction = Transaction {
+                lock_buy: Lock {
+                    market: self.best_prices[0][i].market.clone(),
+                    price: self.best_prices[0][i].price,
+                    token: String::new(),
+                },
+                lock_sell: Lock {
+                    market: self.best_prices[1][i].market.clone(),
+                    price: self.best_prices[1][i].price,
+                    token: String::new(),
+                },
+                good_kind: get_goodkind_by_index(i),
+                quantity: if self.best_prices[0][i].quantity > self.best_prices[0][i].quantity {
+                    self.best_prices[0][i].quantity
+                } else {
+                    self.best_prices[1][i].quantity
+                },
+                deadline: if get_deadline_by_market(&self.best_prices[0][i].market) < get_deadline_by_market(&self.best_prices[1][i].market) {
+                    get_deadline_by_market(&self.best_prices[0][i].market)
+                } else {
+                    get_deadline_by_market(&self.best_prices[1][i].market)
+                },
+                priority: 0.0,
+            };
+            if self.lock_buy(&mut transaction) && self.lock_sell(&mut transaction) {
+                self.transactions.push(transaction);
+            }
+        }
+    }
+
     // Dropshipping implementation
     fn dropship(&mut self, tx: &Sender<String>) {
         let mut transaction_index = 0;
@@ -307,7 +340,7 @@ impl ZSE_Trader {
             if thread_rng().gen_range(0.0..1.0) < alpha {
                 self.dropship(tx);
             } else {
-                self.lock_best_profit();
+                self.lock_profits();
             }
             self.update_priorities();
             self.update_deadlines();
@@ -375,9 +408,9 @@ fn convert_to_eur(g: &Good) -> f32 {
 }
 
 fn write_metadata(goods: &Vec<Good>, tx: &Sender<String>) {
-    let mut s = "".to_string();
+    let mut s = "1 ".to_string();
     for g in goods{
-        s.push_str(&format!("{} {} ", g.get_kind(), convert_to_eur(g)));
+        s.push_str(&format!("{} ", convert_to_eur(g)));
     }
     s.push('\n');
     tx.send(s).unwrap();

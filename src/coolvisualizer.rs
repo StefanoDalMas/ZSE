@@ -48,19 +48,11 @@ pub struct Dataset {
 impl Dataset{
     fn new() -> Self { Dataset{ capital: Vec::new(), eur: Vec::new(), usd: Vec::new(), yen: Vec::new(), yuan: Vec::new() } }
 
-    pub fn append_points(&mut self, message :String, count:f64) {
-        //remove all old data
-        //self.capital.retain(|x| x.x >= count - WINSIZE as f64 - 100.0);
-        //self.eur.retain(|x| x.x >= count - WINSIZE as f64 - 100.0);
-        //self.usd.retain(|x| x.x >= count - WINSIZE as f64 - 100.0);
-        //self.yen.retain(|x| x.x >= count - WINSIZE as f64 - 100.0);
-        //self.yuan.retain(|x| x.x >= count - WINSIZE as f64 - 100.0);
-        //update all data
-        let mut split = message.split_whitespace();
-        let eur = split.clone().nth(1).unwrap().parse::<f64>().unwrap();
-        let usd = split.clone().nth(3).unwrap().parse::<f64>().unwrap();
-        let yen = split.clone().nth(5).unwrap().parse::<f64>().unwrap();
-        let yuan = split.clone().nth(7).unwrap().parse::<f64>().unwrap();
+    pub fn append_points(&mut self, message :Vec<&str>, count:f64) {
+        let eur = message[0].parse::<f64>().unwrap();
+        let usd = message[1].parse::<f64>().unwrap();
+        let yen = message[2].parse::<f64>().unwrap();
+        let yuan = message[3].parse::<f64>().unwrap();
         self.capital.push(PlotPoint{
             x:   count,
             y:   eur+usd+yen+yuan,
@@ -98,7 +90,8 @@ impl Dataset{
 }
 
 pub struct Visualizer {
-    pub dataset: Arc<Mutex<Dataset>>,
+    pub dataset_dropship: Arc<Mutex<Dataset>>,
+    pub dataset_3m: Arc<Mutex<Dataset>>,
     window_y: Vec<f32>,
     state: String,
     widget1: bool,
@@ -110,10 +103,11 @@ impl Visualizer {
     pub fn new() -> Self {
         let args = Args::parse();
         Visualizer {
-            dataset: Arc::new(Mutex::new(Dataset::new())),
+            dataset_dropship: Arc::new(Mutex::new(Dataset::new())),
+            dataset_3m: Arc::new(Mutex::new(Dataset::new())),
             window_y: vec![args.lower_bound,args.upper_bound],
             state: "CAPITAL".to_string(),
-            widget1: false,
+            widget1: true,
             widget2: false,
         }
     }
@@ -127,9 +121,15 @@ impl App for Visualizer {
             .show(ctx, |ui|{
             let mut plot = Plot::new("cooltrader").auto_bounds_y();
             //getting which vector to show
-            let data_selected = self.dataset.lock().unwrap().get_points_conditional(self.state.as_str());
+            let data_dropship = self.dataset_dropship.lock().unwrap().get_points_conditional(self.state.as_str());
+            let data_3m = self.dataset_3m.lock().unwrap().get_points_conditional(self.state.as_str());
             plot.show(ui, |plot_ui| {
-                plot_ui.line(Line::new(data_selected).width(5.0));
+                if self.widget1{
+                    plot_ui.line(Line::new(data_dropship).width(5.0));
+                }
+                if self.widget2{
+                    plot_ui.line(Line::new(data_3m).width(5.0).color(Color32::from_rgb(252, 15, 192)));
+                }
             });
         });
         CentralPanel::default().show(ctx, |ui|{
@@ -177,6 +177,8 @@ fn print_vector(vector: &PlotPoints){
     vector.points().iter().for_each(|x| print_point(x));
 }
 
+
+//Custom Widget implementation
 pub fn toggle_ui(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
     let desired_size = ui.spacing().interact_size.y * egui::vec2(2.0, 1.0);
     let (rect, mut response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
