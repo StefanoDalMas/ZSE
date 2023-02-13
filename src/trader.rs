@@ -23,8 +23,8 @@ unsafe impl Send for ZSE_Trader {} //mandatory in order to pass tx to the trader
 pub struct ZSE_Trader {
     name: String,
     markets: Vec<Rc<RefCell<dyn Market>>>,
-    prices: Vec<Vec<Vec<f32>>>, //prices of markets
-    goods: Vec<Good>,           //goods of the trader
+    prices: Vec<Vec<Vec<f32>>>,
+    goods: Vec<Good>,
     token_buy: Vec<Locking>,
     token_sell: Vec<Locking>,
     information: Data,
@@ -268,7 +268,6 @@ impl ZSE_Trader {
                     self.update_all_prices();
                 }
             }
-            //println!();
             done = 1;
         }
         //println!();
