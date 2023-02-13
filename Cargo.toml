@@ -17,6 +17,6 @@ chrono = "0.4.23"
 eframe = "0.21.0"
 clap = { version = "4.1.4", features = ["derive"] }
 
-rcnz_market = {version = "0.1.1", registry = "kellnr"}
+rcnz_market = {version = "0.1.2", registry = "kellnr"}
 bfb = {version = "0.1.2", registry = "kellnr"}
 BVC = {version = "0.1.9", registry = "kellnr"}
