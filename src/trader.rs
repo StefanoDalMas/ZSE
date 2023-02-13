@@ -244,11 +244,11 @@ impl ZSE_Trader {
 
             if lock {
                 self.information.lock_buy += 1;
-                println!("want to buy: {} -> {}", gk_buy, mb.borrow_mut().get_name());
+                //println!("want to buy: {} -> {}", gk_buy, mb.borrow_mut().get_name());
             } else {
                 wait_one_day!(self.markets[0], self.markets[1], self.markets[2]);
                 self.information.wait += 1;
-                println!("\nWAITING LOCK-BUY\n");
+                //println!("\nWAITING LOCK-BUY\n");
             }
             self.update_time();
             self.update_all_prices();
@@ -261,7 +261,7 @@ impl ZSE_Trader {
                     } else {
                         wait_one_day!(self.markets[0], self.markets[1], self.markets[2]);
                         self.information.wait += 1;
-                        println!("\nWAITING BUY\n");
+                        //println!("\nWAITING BUY\n");
                     }
                     self.update_time();
                     self.update_all_prices();
@@ -269,7 +269,7 @@ impl ZSE_Trader {
             }
             done = 1;
         }
-        //println!();
+
         if self.get_qty_good_trader(1) > 200.0
             || self.get_qty_good_trader(2) > 200.0
             || self.get_qty_good_trader(3) > 200.0
@@ -296,11 +296,11 @@ impl ZSE_Trader {
 
             if lock {
                 self.information.lock_sell += 1;
-                println!("want to sell: {} of {} to {}", qty_sell, gk_sell, ms.borrow_mut().get_name());
+                //println!("want to sell: {} of {} to {}", qty_sell, gk_sell, ms.borrow_mut().get_name());
             } else {
                 wait_one_day!(self.markets[0], self.markets[1], self.markets[2]);
                 self.information.wait += 1;
-                println!("\nWAITING LOCK-SELL\n");
+                //println!("\nWAITING LOCK-SELL\n");
             }
             self.update_time();
             self.update_all_prices();
@@ -313,7 +313,7 @@ impl ZSE_Trader {
                     } else {
                         wait_one_day!(self.markets[0], self.markets[1], self.markets[2]);
                         self.information.wait += 1;
-                        println!("\nWAITING SELL\n");
+                        //println!("\nWAITING SELL\n");
                     }
                     self.update_time();
                     self.update_all_prices();
