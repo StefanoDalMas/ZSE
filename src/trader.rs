@@ -28,6 +28,7 @@ pub struct ZSE_Trader {
     token_sell: Vec<Locking>,
     information: Data,
 }
+
 #[derive(Debug, Clone)]
 enum Mode {
     Buy,

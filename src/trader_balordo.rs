@@ -15,6 +15,7 @@ use BVC::BVCMarket;
 use clap::Parser;
 use crate::Args;
 
+
 const STARTING_BUDGET: f32 = 40000.0;
 const BUFFER_SIZE: i32 = 5; // 5 * 2 = 10 (min BFB)
 

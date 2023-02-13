@@ -219,3 +219,4 @@ pub fn toggle_ui(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
 pub fn toggle(on: &mut bool) -> impl egui::Widget + '_ {
     move |ui: &mut egui::Ui| toggle_ui(ui, on)
 }
+
