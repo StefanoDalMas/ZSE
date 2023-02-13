@@ -455,9 +455,9 @@ impl ZSE_Trader {
 
         while !bankrupt {
             self.update_best_prices();
-            println!("...................................");
-            println!("Locks: {}", self.transactions.len());
-            println!("Budget: {}", self.get_budget());
+            //println!("...................................");
+            //println!("Locks: {}", self.transactions.len());
+            //println!("Budget: {}", self.get_budget());
             alpha = self.transactions.len() as f32 / BUFFER_SIZE as f32;
             if thread_rng().gen_range(0.0..1.0) < alpha {
                 self.dropship(tx);
