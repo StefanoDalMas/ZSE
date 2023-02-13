@@ -1,19 +1,11 @@
-use std::collections::VecDeque;
-use std::fmt::Formatter;
-use std::fs::{write, OpenOptions};
-use std::io::{BufRead, BufReader, Read, Write};
-use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
-use std::thread::sleep;
-use std::{fmt, thread};
 
 use clap::Parser;
 use eframe::egui::plot::{Line, Plot, PlotPoint, PlotPoints, PlotPoints::Owned};
 use eframe::egui::{
-    Align, CentralPanel, Color32, Context, Direction, FontFamily, Layout, SidePanel,
+    Align, CentralPanel, Color32, Context, FontFamily, Layout, SidePanel,
 };
-use eframe::{egui, run_native, App, CreationContext, Frame};
-use rand::Rng;
+use eframe::{egui, App, Frame};
 
 use crate::egui::RichText;
 
@@ -55,16 +47,14 @@ impl Dataset {
     }
 
     pub fn get_points_conditional(&self, state: &str) -> PlotPoints {
-        let mut res;
-        match state {
-            "CAPITAL" => res = Vec::from_iter(self.capital.iter().cloned()),
-            "EUR" => res = Vec::from_iter(self.eur.iter().cloned()),
-            "USD" => res = Vec::from_iter(self.usd.iter().cloned()),
-            "YEN" => res = Vec::from_iter(self.yen.iter().cloned()),
-            "YUAN" => res = Vec::from_iter(self.yuan.iter().cloned()),
+        Owned(match state {
+            "CAPITAL" => Vec::from_iter(self.capital.iter().cloned()),
+            "EUR" => Vec::from_iter(self.eur.iter().cloned()),
+            "USD" => Vec::from_iter(self.usd.iter().cloned()),
+            "YEN" => Vec::from_iter(self.yen.iter().cloned()),
+            "YUAN" => Vec::from_iter(self.yuan.iter().cloned()),
             _ => panic!("Invalid state"),
-        }
-        Owned(res)
+        })
     }
 }
 
@@ -91,11 +81,11 @@ impl Visualizer {
 impl App for Visualizer {
     fn update(&mut self, ctx: &Context, _: &mut Frame) {
         let args = crate::Args::parse();
-        SidePanel::right("Prova")
+        SidePanel::right("Graph")
             .show_separator_line(false)
             .exact_width(1000.0)
             .show(ctx, |ui| {
-                let mut plot = Plot::new("cooltrader").auto_bounds_y();
+                let plot = Plot::new("cooltrader").auto_bounds_y();
                 //getting which vector to show
                 let data_dropship = self
                     .dataset_dropship
@@ -132,11 +122,7 @@ impl App for Visualizer {
                 ui_centered.separator();
                 if ui_centered
                     .radio(
-                        if self.state == "CAPITAL".to_string() {
-                            true
-                        } else {
-                            false
-                        },
+                        self.state == "CAPITAL".to_string(),
                         "CAPITAL",
                     )
                     .clicked()
@@ -145,11 +131,7 @@ impl App for Visualizer {
                 };
                 if ui_centered
                     .radio(
-                        if self.state == "EUR".to_string() {
-                            true
-                        } else {
-                            false
-                        },
+                        self.state == "EUR".to_string(),
                         "EUR",
                     )
                     .clicked()
@@ -158,11 +140,7 @@ impl App for Visualizer {
                 };
                 if ui_centered
                     .radio(
-                        if self.state == "USD".to_string() {
-                            true
-                        } else {
-                            false
-                        },
+                        self.state == "USD".to_string(),
                         "USD",
                     )
                     .clicked()
@@ -171,11 +149,7 @@ impl App for Visualizer {
                 };
                 if ui_centered
                     .radio(
-                        if self.state == "YEN".to_string() {
-                            true
-                        } else {
-                            false
-                        },
+                        self.state == "YEN".to_string(),
                         "YEN",
                     )
                     .clicked()
@@ -184,11 +158,7 @@ impl App for Visualizer {
                 };
                 if ui_centered
                     .radio(
-                        if self.state == "YUAN".to_string() {
-                            true
-                        } else {
-                            false
-                        },
+                        self.state == "YUAN".to_string(),
                         "YUAN",
                     )
                     .clicked()
@@ -220,7 +190,7 @@ fn print_point(point: &PlotPoint) {
 }
 
 fn print_vector(vector: &PlotPoints) {
-    vector.points().iter().for_each(|x| print_point(x));
+    vector.points().iter().for_each( print_point);
 }
 
 //Custom Widget implementation

@@ -1,6 +1,4 @@
 use std::cell::RefCell;
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::rc::Rc;
 use std::sync::mpsc::Sender;
 
@@ -14,10 +12,11 @@ use unitn_market_2022::good::{good::Good, good_kind::GoodKind};
 use unitn_market_2022::market::{LockBuyError, LockSellError, Market};
 use unitn_market_2022::{subscribe_each_other, wait_one_day};
 use BVC::BVCMarket;
+use clap::Parser;
+use crate::Args;
 
 const STARTING_BUDGET: f32 = 40000.0;
 const BUFFER_SIZE: i32 = 5; // 5 * 2 = 10 (min BFB)
-const TRADER_DELAY_WRITE_MS: u64 = 200;
 
 pub struct ZSE_Trader {
     name: String,
@@ -55,7 +54,7 @@ unsafe impl Send for ZSE_Trader {} //mandatory in order to pass tx to the trader
 impl ZSE_Trader {
     fn default() -> Self {
         let name = "ZSE_Trader".to_string();
-        let mut markets = Vec::new();
+        let markets = Vec::new();
         let goods = Vec::new();
         let mut best_prices = vec![
             vec![
@@ -84,7 +83,7 @@ impl ZSE_Trader {
             };
             4
         ];
-        let mut transactions = Vec::new();
+        let transactions = Vec::new();
         let days = 0;
         Self {
             name,
@@ -147,7 +146,7 @@ impl ZSE_Trader {
     }
 
     pub fn get_budget(&self) -> f32 {
-        self.goods.iter().map(|good| convert_to_eur(good)).sum()
+        self.goods.iter().map(convert_to_eur).sum()
     }
 
     fn update_best_prices(&mut self) {
@@ -226,13 +225,14 @@ impl ZSE_Trader {
 
     // Buy & Sell Lock functions
     fn lock_buy(&mut self, t: &mut Transaction) -> bool {
+        //i have to debug this, it's not working
         if self.days >= 5 {
             for _ in 0..5 {
                 wait_one_day!();
             }
             self.days = 0;
         }
-        let res = self.markets[get_index_by_market(&*t.lock_buy.market)]
+        let res = self.markets[get_index_by_market(&t.lock_buy.market)]
             .borrow_mut()
             .lock_buy(
                 t.good_kind,
@@ -250,17 +250,16 @@ impl ZSE_Trader {
                 LockBuyError::BidTooLow {
                     requested_good_kind: _,
                     requested_good_quantity: qty,
-                    low_bid: offered,
+                    low_bid: _,
                     lowest_acceptable_bid: minimum,
                 } => {
-                    t.lock_buy.price = minimum / qty;
-                    if minimum - offered < 0.00001 {
-                        t.lock_buy.price += 0.00001;
-                    }
+                    t.lock_buy.price = (minimum / qty) + 0.00001;
                     self.days += 1;
                     self.lock_buy(t)
                 }
-                _ => false,
+                _ => {
+                    false
+                },
             },
         }
     }
@@ -283,16 +282,15 @@ impl ZSE_Trader {
                 LockSellError::OfferTooHigh {
                     offered_good_kind: _,
                     offered_good_quantity: qty,
-                    high_offer: offered,
+                    high_offer: _,
                     highest_acceptable_offer: maximum,
                 } => {
-                    t.lock_sell.price = maximum / qty;
-                    if offered - maximum > 0.00001 {
-                        t.lock_sell.price -= 0.00001;
-                    }
+                    t.lock_sell.price = (maximum / qty) - 0.00001;
                     self.lock_sell(t)
                 }
-                _ => false,
+                _ => {
+                    false
+                },
             },
         }
     }
@@ -467,11 +465,7 @@ impl ZSE_Trader {
             self.update_priorities();
             self.update_deadlines();
             //std::thread::sleep(std::time::Duration::from_millis(200));
-            bankrupt = if self.get_budget() <= 0.0 {
-                true
-            } else {
-                false
-            };
+            bankrupt = self.get_budget() <= 0.0;
         }
     }
 
@@ -512,21 +506,21 @@ fn get_deadline_by_market(m: &str) -> i32 {
 }
 
 fn get_index_by_goodkind(kind: &GoodKind) -> usize {
-    return match *kind {
+    match *kind {
         GoodKind::EUR => 0,
         GoodKind::USD => 1,
         GoodKind::YEN => 2,
         GoodKind::YUAN => 3,
-    };
+    }
 }
 
 fn get_goodkind_by_index(i: usize) -> GoodKind {
-    return match i {
+    match i {
         1 => GoodKind::USD,
         2 => GoodKind::YEN,
         3 => GoodKind::YUAN,
         _ => GoodKind::EUR,
-    };
+    }
 }
 
 fn convert_to_eur(g: &Good) -> f32 {
@@ -539,11 +533,12 @@ fn convert_to_eur(g: &Good) -> f32 {
 }
 
 fn write_metadata(goods: &Vec<Good>, tx: &Sender<String>) {
+    let args = crate::Args::parse();
     let mut s = "1 ".to_string();
     for g in goods {
         s.push_str(&format!("{} ", convert_to_eur(g)));
     }
     s.push('\n');
     tx.send(s).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(TRADER_DELAY_WRITE_MS));
+    std::thread::sleep(std::time::Duration::from_millis(args.delay));
 }

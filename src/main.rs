@@ -1,13 +1,9 @@
-use std::fs::File;
-use std::io::{Read, Write};
-use std::string::ToString;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::mpsc;
 use std::time::Duration;
-use std::{mem, thread};
+use std::thread;
 
 use bfb::bfb_market::Bfb;
 use clap::Parser;
-use eframe::egui::plot::PlotPoint;
 use eframe::{egui, run_native};
 use rand::{thread_rng, Rng};
 use rcnz_market::rcnz::RCNZ;
@@ -21,7 +17,6 @@ mod trader_balordo;
 
 const TX_DELAY_MS: u64 = 200;
 const STARTING_BUDGET: f32 = 40000.0;
-
 //Clap
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -69,10 +64,10 @@ fn main() {
     );
 
     //visualizer init
-    let mut visualizer = coolvisualizer::Visualizer::new();
-    let mut dataset_dropship = visualizer.dataset_dropship.clone();
-    let mut dataset_3m = visualizer.dataset_3m.clone();
-    let mut native_options = set_native_options();
+    let visualizer = coolvisualizer::Visualizer::new();
+    let dataset_dropship = visualizer.dataset_dropship.clone();
+    let dataset_3m = visualizer.dataset_3m.clone();
+    let native_options = set_native_options();
 
     //FIFO init
     let (tx, rx) = mpsc::channel();
@@ -85,7 +80,6 @@ fn main() {
     thread::spawn(move || {
         trader1.trade(&tx);
     });
-
     thread::spawn(move || {
         let mut count = 0;
         for str in rx {
