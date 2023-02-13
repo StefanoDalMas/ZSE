@@ -424,29 +424,24 @@ impl ZSE_Trader {
                         }
                     }
                 }
-            } else {
-                panic!("Market error: {:?}", min_bid_offer);
+                string = market
+                    .borrow_mut()
+                    .lock_buy(gk, qty, offer, self.get_name().clone());
+                if let Ok(token) = string {
+                    let new_qty_euro = self.goods[0].get_qty() - offer; //how much EUR i have after lock (NOT change yet)
+                    let new_qty_gk_buy = self.goods[get_index_by_goodkind(&gk)].get_qty() + qty;
+                    self.token_buy.push(Locking {
+                        token,
+                        market: market.clone(),
+                        time: -1,
+                        kind: gk,
+                        qty,
+                        new_qty_euro,
+                        new_qty_gk: new_qty_gk_buy,
+                    });
+                    return true;
+                }
             }
-
-            string = market
-                .borrow_mut()
-                .lock_buy(gk, qty, offer, self.get_name().clone());
-            if let Ok(token) = string {
-                let new_qty_euro = self.goods[0].get_qty() - offer; //how much EUR i have after lock (NOT change yet)
-                let new_qty_gk_buy = self.goods[get_index_by_goodkind(&gk)].get_qty() + qty;
-                self.token_buy.push(Locking {
-                    token,
-                    market: market.clone(),
-                    time: -1,
-                    kind: gk,
-                    qty,
-                    new_qty_euro,
-                    new_qty_gk: new_qty_gk_buy,
-                });
-            } else {
-                panic!("{} -> {:?}", market.borrow_mut().get_name(), string);
-            }
-            return true;
         }
         false
     }
@@ -461,9 +456,8 @@ impl ZSE_Trader {
             let qty = self.token_buy[0].qty;
 
             let buy = market.borrow_mut().buy(token, &mut self.goods[0]);
-            if buy.is_err() { panic!("Buy Error: {:?}", buy); }
-            let res = self.goods[get_index_by_goodkind(&gk)].merge(Good::new(gk, qty));
-            if res.is_err() { panic!("Merge Error: {:?}", res); }
+            if buy.is_err() { result = false; }
+            let _ = self.goods[get_index_by_goodkind(&gk)].merge(Good::new(gk, qty));
             result = true;
         }
         self.token_buy.remove(0);
@@ -490,29 +484,25 @@ impl ZSE_Trader {
                         return false;
                     }
                 }
-            } else {
-                panic!("Market error: {:?}", min_offer);
-            }
 
-            string = market
-                .borrow_mut()
-                .lock_sell(gk, qty, offer, self.get_name().clone());
-            if let Ok(token) = string {
-                let new_qty_euro = self.goods[0].get_qty() + offer;
-                let new_qty_gk_sell = self.goods[get_index_by_goodkind(&gk)].get_qty() - qty;
-                self.token_sell.push(Locking {
-                    token,
-                    market: market.clone(),
-                    time: -1,
-                    kind: gk,
-                    qty,
-                    new_qty_euro,
-                    new_qty_gk: new_qty_gk_sell,
-                });
-            } else {
-                panic!("{} -> {:?}", market.borrow_mut().get_name(), string);
+                string = market
+                    .borrow_mut()
+                    .lock_sell(gk, qty, offer, self.get_name().clone());
+                if let Ok(token) = string {
+                    let new_qty_euro = self.goods[0].get_qty() + offer;
+                    let new_qty_gk_sell = self.goods[get_index_by_goodkind(&gk)].get_qty() - qty;
+                    self.token_sell.push(Locking {
+                        token,
+                        market: market.clone(),
+                        time: -1,
+                        kind: gk,
+                        qty,
+                        new_qty_euro,
+                        new_qty_gk: new_qty_gk_sell,
+                    });
+                    return true;
+                }
             }
-            return true;
         }
         false
     }
@@ -528,9 +518,8 @@ impl ZSE_Trader {
             let sell = market
                 .borrow_mut()
                 .sell(token, &mut self.goods[get_index_by_goodkind(&gk)]);
-            if sell.is_err() { panic!("Sell Error: {:?}", sell); }
-            let res = self.goods[0].merge(Good::new(GoodKind::EUR, qty));
-            if res.is_err() { panic!("Merge Error: {:?}", res); }
+            if sell.is_err() { result = false; }
+            let _ = self.goods[0].merge(Good::new(GoodKind::EUR, qty));
             self.update_all_prices();
             result = true;
         }
